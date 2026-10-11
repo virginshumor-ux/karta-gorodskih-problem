@@ -24,11 +24,16 @@
 
 ## Ссылки
 
-- **Сайт:** `https://<user>.github.io/<repo>/` — появится после публикации репозитория (шаг 6 в [MANUAL_STEPS](docs/MANUAL_STEPS.md)).
-- **APK:** раздел Releases репозитория (`kgp-v1.x.x.apk`).
-- QR-коды для сайта и APK генерируются командой `node web/scripts/make-qr.mjs <адрес сайта> <адрес APK>` в `docs/qr-site.png` и `docs/qr-apk.png`.
+| | Адрес | QR |
+|---|---|---|
+| **Сайт** (телефон и компьютер, устанавливается на главный экран) | <https://virginshumor-ux.github.io/karta-gorodskih-problem/> | <img src="docs/qr-site.png" width="140" alt="QR-код сайта"> |
+| **APK для Android 8+** (последняя версия) | <https://github.com/virginshumor-ux/karta-gorodskih-problem/releases/latest/download/kgp.apk> | <img src="docs/qr-apk.png" width="140" alt="QR-код APK"> |
+| Все версии | [Releases](https://github.com/virginshumor-ux/karta-gorodskih-problem/releases) | |
+| CI | [GitHub Actions](https://github.com/virginshumor-ux/karta-gorodskih-problem/actions) | |
 
-Пока сервер Supabase не подключён, сайт и APK работают в **автономном демо-режиме**: 15 демо-обращений из прототипа, данные хранятся только на устройстве. В интерфейсе это отмечено баннером.
+Установка APK: скачайте файл, разрешите установку из этого источника и откройте его. APK подписан ключом проекта.
+
+Пока сервер Supabase не подключён, сайт и APK работают в **автономном демо-режиме**: 15 демо-обращений из прототипа, данные хранятся только на устройстве. В интерфейсе это отмечено баннером. После подключения сервера (шаги 1–2 [MANUAL_STEPS](docs/MANUAL_STEPS.md)) у приложения и сайта будет общая база.
 
 ## Функции (по ТЗ)
 

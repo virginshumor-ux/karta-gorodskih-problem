@@ -39,10 +39,14 @@ jobs:
           chmod +x gradlew
           ./gradlew --no-daemon lintRelease testDebugUnitTest assembleRelease
           cp app/build/outputs/apk/release/app-release.apk "$RUNNER_TEMP/kgp-${GITHUB_REF_NAME}.apk"
+          # Constant name for the permanent link releases/latest/download/kgp.apk (README, QR code).
+          cp app/build/outputs/apk/release/app-release.apk "$RUNNER_TEMP/kgp.apk"
       - uses: softprops/action-gh-release@v3
         if: startsWith(github.ref, 'refs/tags/')
         with:
-          files: ${{ runner.temp }}/kgp-${{ github.ref_name }}.apk
+          files: |
+            ${{ runner.temp }}/kgp-${{ github.ref_name }}.apk
+            ${{ runner.temp }}/kgp.apk
           body: |
             APK «Карта городских проблем» ${{ github.ref_name }} — Android 8.0+.
             Установка: скачайте файл, разрешите установку из этого источника и откройте его.

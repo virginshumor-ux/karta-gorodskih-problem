@@ -1,0 +1,37 @@
+# secrets
+.env
+.env.*
+!.env.example
+*.keystore
+*.jks
+keystore.properties
+local.properties
+supabase/.env
+supabase/functions/.env
+
+# original handoff folder (copied to docs/handoff)
+/KGP_handoff/
+
+# node / web
+node_modules/
+web/dist/
+web/test-results/
+web/playwright-report/
+web/coverage/
+
+# android
+android/.gradle/
+android/build/
+android/app/build/
+android/.kotlin/
+android/captures/
+*.iml
+.idea/
+
+# supabase
+supabase/.temp/
+supabase/.branches/
+
+# misc
+.DS_Store
+Thumbs.db

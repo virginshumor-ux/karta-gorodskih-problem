@@ -36,3 +36,4 @@ supabase/.branches/
 .DS_Store
 Thumbs.db
 dist-e2e-*/
+/dist/

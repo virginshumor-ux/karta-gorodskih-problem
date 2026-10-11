@@ -18,7 +18,7 @@ jobs:
           version: 2.120.0
       - run: supabase start -x studio,imgproxy,mailpit,edge-runtime,logflare,vector,supavisor
       - run: supabase test db
-      - run: supabase db lint --level error --fail-on error
+      - run: supabase db lint --schema public --level error --fail-on error
 
   functions:
     name: Edge Functions — проверка и тесты

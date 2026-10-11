@@ -75,6 +75,8 @@ test("APK-independent shared base: create → moderate → realtime notification
 
   // the author gets the notification through Realtime (toast + badge) without reloading
   await expect(author.page.locator(".toast")).toContainText("опубликовано на карте", { timeout: 20_000 });
+  // The success screen hides the bottom navigation (as in the prototype); the badge shows on the map.
+  await author.page.click(".success [data-go=map]");
   await expect(author.page.locator(".bottom-nav .nav-badge")).toBeVisible();
 
   // now the guest sees it, with history and the photo
@@ -84,7 +86,6 @@ test("APK-independent shared base: create → moderate → realtime notification
   await expect(guest.locator(".hero img")).toHaveCount(1);
 
   // offline: the complaint becomes a draft and is sent automatically when the network is back
-  await author.page.click("[data-go=map]");
   await author.page.context().setOffline(true);
   const offTitle = `Офлайн черновик ${stamp}`;
   await createComplaint(author.page, offTitle, 56.0201, 92.8601).catch(() => undefined);

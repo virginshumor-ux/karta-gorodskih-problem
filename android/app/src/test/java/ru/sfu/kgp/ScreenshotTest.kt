@@ -49,9 +49,7 @@ class ScreenshotTest {
         val vm = MainViewModel(c)
         rule.setContent { KgpTheme(theme) { content(vm, c) } }
         rule.waitForIdle()
-        val bmp = rule.onRoot().captureToImage().asAndroidBitmap()
-        val dir = File("build/screenshots").apply { mkdirs() }
-        File(dir, "$name.png").outputStream().use { bmp.compress(Bitmap.CompressFormat.PNG, 100, it) }
+        save(name, rule.onRoot().captureToImage().asAndroidBitmap())
     }
 
     @Test fun onboarding() = shot("a01_onboarding") { vm, _ -> Onboarding(0, vm) }
@@ -61,9 +59,23 @@ class ScreenshotTest {
     @Test fun profile() = shot("a05_profile") { vm, _ -> val s by vm.state.collectAsState(); ProfileScreen(s, vm, {}, {}, {}, {}, {}) }
     @Test fun stats() = shot("a06_stats") { vm, _ -> val s by vm.state.collectAsState(); StatsScreen(s, vm) {} }
     @Test fun weather() = shot("a07_weather") { vm, _ -> val s by vm.state.collectAsState(); WeatherScreen(s, vm) {} }
-    @Test fun wizardCategory() = shot("a08_wizard_category") { vm, c ->
-        val s by vm.state.collectAsState()
+    @Test fun wizardCategory() {
+        assumeTrue(System.getenv("KGP_SCREENSHOTS") != null)
+        val c = testContainer(rule.activity)
+        runBlocking { c.backend.init(); c.backend.signInDemo(); c.backend.completeProfile("житель_101", true) }
+        val vm = MainViewModel(c)
         val handle = SavedStateHandle().apply { set(CreateViewModel.KEY, Json.encodeToString(WizardDraft.serializer(), WizardDraft(step = 2, category = "snow"))) }
-        CreateScreen(CreateViewModel(c, handle) { emptyList() }, vm, s, c.http, c.photos, {}, {}, {}, {})
+        val wizard = CreateViewModel(c, handle) { emptyList() }
+        rule.setContent {
+            val s by vm.state.collectAsState()
+            KgpTheme(ThemeMode.LIGHT) { CreateScreen(wizard, vm, s, c.http, c.photos, {}, {}, {}, {}) }
+        }
+        rule.waitForIdle()
+        save("a08_wizard_category", rule.onRoot().captureToImage().asAndroidBitmap())
+    }
+
+    private fun save(name: String, bmp: Bitmap) {
+        val dir = File("build/screenshots").apply { mkdirs() }
+        File(dir, "$name.png").outputStream().use { bmp.compress(Bitmap.CompressFormat.PNG, 100, it) }
     }
 }

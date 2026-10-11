@@ -35,3 +35,4 @@ supabase/.branches/
 # misc
 .DS_Store
 Thumbs.db
+dist-e2e-*/

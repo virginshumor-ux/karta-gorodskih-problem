@@ -51,8 +51,11 @@
 4. Доступы: **Доступ к логину, имени и фамилии, полу** (`login:info`). Email не нужен.
 5. Сохраните `ClientID` и `Client secret`, затем выполните:
    ```bash
-   npx supabase@2.120.0 secrets set YANDEX_CLIENT_ID=... YANDEX_CLIENT_SECRET=... SITE_URL=https://<user>.github.io/<repo>/
+   npx supabase@2.120.0 secrets set YANDEX_CLIENT_ID=... YANDEX_CLIENT_SECRET=... SITE_URL=https://<user>.github.io/<repo>/ KGP_STATE_SECRET=<любая случайная строка 32+ символа>
    ```
+   `SITE_URL` — адрес сайта, на который функция может вернуть пользователя после входа (защита от open redirect).
+   Можно указать несколько адресов через запятую. `localhost` разрешён всегда — для разработки.
+   Провайдер **Email** в **Authentication → Sign In / Providers** должен остаться включённым: вход через Яндекс ID / VK ID выдаёт одноразовую ссылку (`generateLink`), письма при этом не отправляются.
 6. Тот же `ClientID` добавьте в GitHub Secrets как `YANDEX_CLIENT_ID` (он публичный, нужен клиентам).
 
 ## 4. VK ID (по желанию, ≈10 мин)

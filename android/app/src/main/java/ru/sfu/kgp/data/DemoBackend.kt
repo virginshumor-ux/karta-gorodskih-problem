@@ -102,8 +102,10 @@ class DemoBackend(private val file: File?, private val clock: () -> Long = Syste
     }
 
     override suspend fun init(): AuthState = lock.withLock {
-        st = load()
-        save()
+        if (!::st.isInitialized) {
+            st = load()
+            save()
+        }
         state()
     }
 

@@ -34,8 +34,10 @@ jobs:
           KGP_SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
           KGP_YANDEX_CLIENT_ID: ${{ secrets.YANDEX_CLIENT_ID }}
           KGP_VK_CLIENT_ID: ${{ secrets.VK_CLIENT_ID }}
+          KGP_SITE_URL: https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/
         run: |
-          ./gradlew --no-daemon lintRelease testReleaseUnitTest assembleRelease
+          chmod +x gradlew
+          ./gradlew --no-daemon lintRelease testDebugUnitTest assembleRelease
           cp app/build/outputs/apk/release/app-release.apk "$RUNNER_TEMP/kgp-${GITHUB_REF_NAME}.apk"
       - uses: softprops/action-gh-release@v3
         if: startsWith(github.ref, 'refs/tags/')

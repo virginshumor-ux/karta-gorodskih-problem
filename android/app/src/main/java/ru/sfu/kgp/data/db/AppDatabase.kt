@@ -94,7 +94,9 @@ abstract class AppDatabase : RoomDatabase() {
 
     companion object {
         fun create(context: Context, inMemory: Boolean = false): AppDatabase =
-            if (inMemory) Room.inMemoryDatabaseBuilder(context, AppDatabase::class.java).allowMainThreadQueries().build()
+            // In-memory = tests: queries run on the calling thread, so tests observe results deterministically.
+            if (inMemory) Room.inMemoryDatabaseBuilder(context, AppDatabase::class.java).allowMainThreadQueries()
+                .setQueryExecutor { it.run() }.setTransactionExecutor { it.run() }.build()
             else Room.databaseBuilder(context, AppDatabase::class.java, "kgp.db").build()
     }
 }

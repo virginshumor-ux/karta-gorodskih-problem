@@ -80,7 +80,7 @@ jobs:
           distribution: temurin
           java-version: 21
       - uses: gradle/actions/setup-gradle@v6
-      - run: ./gradlew --no-daemon lintDebug testDebugUnitTest assembleDebug
+      - run: chmod +x gradlew && ./gradlew --no-daemon lintDebug testDebugUnitTest assembleDebug assembleRelease
       - uses: actions/upload-artifact@v7
         with:
           name: app-debug

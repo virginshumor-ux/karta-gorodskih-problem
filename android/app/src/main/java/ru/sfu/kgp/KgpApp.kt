@@ -36,7 +36,7 @@ class AppContainer(
     val privacyText: String by lazy { context.assets.open("privacy.md").bufferedReader().use { it.readText() } }
 }
 
-class KgpApp : Application() {
+open class KgpApp : Application() {
     lateinit var container: AppContainer
 
     override fun onCreate() {

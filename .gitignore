@@ -37,3 +37,8 @@ supabase/.branches/
 Thumbs.db
 dist-e2e-*/
 /dist/
+
+# private course documents (kept locally, not published)
+/PROMPT_ClaudeCode.md
+/docs/handoff/TZ_Karta_gorodskih_problem.docx
+/docs/handoff/PR2_Prototip.pdf

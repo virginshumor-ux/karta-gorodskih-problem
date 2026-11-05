@@ -28,10 +28,10 @@ export async function isolate(
         const body = mode === "ok" ? ok : blocked;
         return route.fulfill({ status: mode === "blocked403" ? 403 : 200, body, headers: { "Content-Type": "image/png", "Access-Control-Allow-Origin": "*" } });
       }
-      if (u.hostname === "nominatim.openstreetmap.org")
-        return route.fulfill({ status: 200, body: file("nominatim.json"), headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" } });
-      if (u.hostname === "api.open-meteo.com")
-        return route.fulfill({ status: 200, body: file("weather.json"), headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" } });
+      const json = (name: string) => route.fulfill({ status: 200, body: file(name), headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" } });
+      if (u.hostname === "nominatim.openstreetmap.org") return json(u.pathname.startsWith("/search") ? "nominatim_search.json" : "nominatim.json");
+      if (u.hostname === "api.open-meteo.com") return json("weather.json");
+      if (u.hostname === "air-quality-api.open-meteo.com") return json("air.json");
       return route.abort();
     },
   );

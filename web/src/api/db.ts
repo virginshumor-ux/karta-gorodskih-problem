@@ -14,6 +14,7 @@ export type LocalComplaint = Omit<Complaint, "photos"> & {
   authorId: string | null;
   supporters: string[];
   confirmers: string[];
+  commentList?: { id: string; text: string; author: string; authorId: string; at: number; hidden: boolean }[];
 };
 
 interface KgpDB extends DBSchema {

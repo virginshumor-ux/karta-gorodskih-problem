@@ -1,3 +1,4 @@
+import { KRSK_BOX } from "../domain/constants";
 import { distM, type LatLng } from "../domain/format";
 import { fetchJSON } from "./net";
 
@@ -55,6 +56,51 @@ export async function geocodePoint(lat: number, lng: number, known: (LatLng & { 
   const near = known.slice().sort((a, b) => distM(a, pt) - distM(b, pt))[0];
   if (near && distM(near, pt) < 300) return { address: "рядом с: " + near.address, district: near.district, source: "local" };
   return { address: "Точка на карте (адрес не определён)", district: "", source: "none" };
+}
+
+export interface Place extends LatLng {
+  title: string;
+  subtitle: string;
+}
+
+interface NominatimSearchItem {
+  lat: string;
+  lon: string;
+  name?: string;
+  display_name?: string;
+  address?: Record<string, string>;
+}
+
+/** Forward search (command palette): Nominatim bounded to Krasnoyarsk, Photon as the fallback. */
+export async function searchPlaces(q: string): Promise<Place[]> {
+  const query = q.trim();
+  if (query.length < 3) return [];
+  const box = `${KRSK_BOX.w},${KRSK_BOX.n},${KRSK_BOX.e},${KRSK_BOX.s}`;
+  try {
+    await nominatimSlot();
+    const items = await fetchJSON<NominatimSearchItem[]>(
+      `https://nominatim.openstreetmap.org/search?format=json&addressdetails=1&limit=6&accept-language=ru&bounded=1&viewbox=${box}&q=${encodeURIComponent(query)}`,
+    );
+    return items.map((i) => {
+      const a = i.address ?? {};
+      const road = a.road || a.pedestrian || a.footway || "";
+      const title = i.name || (road ? road + (a.house_number ? ", " + a.house_number : "") : (i.display_name ?? "").split(",")[0] || query);
+      return { lat: Number(i.lat), lng: Number(i.lon), title, subtitle: [road && i.name ? road + (a.house_number ? ", " + a.house_number : "") : "", a.city_district || a.suburb || ""].filter(Boolean).join(" · ") };
+    });
+  } catch {
+    /* next source */
+  }
+  try {
+    const j = await fetchJSON<{ features?: { geometry: { coordinates: [number, number] }; properties?: Record<string, string> }[] }>(
+      `https://photon.komoot.io/api/?q=${encodeURIComponent(query)}&limit=6&lang=default&bbox=${KRSK_BOX.w},${KRSK_BOX.s},${KRSK_BOX.e},${KRSK_BOX.n}`,
+    );
+    return (j.features ?? []).map((f) => {
+      const p = f.properties ?? {};
+      return { lng: f.geometry.coordinates[0], lat: f.geometry.coordinates[1], title: p.name || (p.street ? p.street + (p.housenumber ? ", " + p.housenumber : "") : query), subtitle: [p.street && p.name ? p.street : "", p.district || ""].filter(Boolean).join(" · ") };
+    });
+  } catch {
+    return [];
+  }
 }
 
 function remember(k: string, r: GeoResult): GeoResult {

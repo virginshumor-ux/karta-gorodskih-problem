@@ -1,4 +1,5 @@
 import { esc, ico, inKrsk } from "../domain/format";
+import { suggestCategory } from "../domain/smart";
 import type { Duplicate } from "../domain/types";
 import { cat, S, user } from "../state/store";
 import { topbar } from "./common";
@@ -6,7 +7,19 @@ import { topbar } from "./common";
 export const STEP_TITLES = ["Фото проблемы", "Где это?", "Что случилось?", "Описание", "Проверка"];
 
 /** Duplicates found on step 5 (filled asynchronously by the app). */
-export const wizard = { dups: null as Duplicate[] | null, busy: false };
+export const wizard = { dups: null as Duplicate[] | null, busy: false, listening: false };
+
+/** Web Speech API (Chrome, Edge, Safari, Yandex Browser); absent in Firefox. */
+export const speechAvailable = (): boolean => "webkitSpeechRecognition" in window || "SpeechRecognition" in window;
+
+/** Hint on the description step when the text clearly points to another category. */
+export function suggestionHtml(): string {
+  const d = S.draft;
+  if (!d) return "";
+  const s = suggestCategory(`${d.title} ${d.description}`);
+  if (!s || s === d.category || !S.cats.some((c) => c.id === s)) return "";
+  return `<div class="suggest">${ico("lightbulb", "fill")}<span class="grow">Похоже на категорию «${esc(cat(s).name)}»</span><button class="btn text" data-act="applysuggest" data-id="${esc(s)}" style="min-height:36px">Выбрать</button></div>`;
+}
 
 export function stepReady(): boolean {
   const d = S.draft;
@@ -51,11 +64,12 @@ export function viewCreate(): string {
         ${d.photoUrls.map((p, i) => `<div class="photo-slot"><img src="${esc(p)}" alt="Фото ${i + 1}"><button class="rm" data-rmphoto="${i}" aria-label="Удалить фото ${i + 1}">${ico("close")}</button></div>`).join("")}
         ${d.photos.length < 3 ? `<label class="photo-slot add" for="photo-camera">${ico("photo_camera")}<span>Снять фото</span></label><label class="photo-slot add" for="photo-input">${ico("photo_library")}<span>Из галереи</span></label>` : ""}
       </div>
+      ${d.fromExif ? `<span class="geo-tag">${ico("location_on", "fill")}Место определено по геометке фото — проверьте на следующем шаге</span>` : ""}
       <input id="photo-camera" type="file" accept="image/*" capture="environment" hidden>
       <input id="photo-input" type="file" accept="image/*" multiple hidden>
       <div class="pad" style="margin-top:12px"><button class="btn text" data-act="demophoto" ${d.photos.length >= 3 ? "disabled" : ""}>${ico("image")}Нет фото под рукой — добавить демо-иллюстрацию</button></div>`;
   } else if (d.step === 1) {
-    body = `<h2 class="step-title">Отметьте место</h2><p class="step-sub">Передвиньте карту так, чтобы метка указывала на проблему.</p>
+    body = `<h2 class="step-title">Отметьте место</h2><p class="step-sub">Передвиньте карту так, чтобы метка указывала на проблему.${d.fromExif ? " Метка уже стоит там, где сделано фото." : ""}</p>
       <div class="place-map"><div id="placemap" style="position:absolute;inset:0"></div><div class="place-pin">${ico("location_on", "fill")}</div></div>
       <div class="addr-box">${ico("place")}<div class="grow"><b id="addr-line">${esc(d.address || "Определяем адрес…")}</b><div class="small muted" id="addr-sub">${d.lat != null && d.lng != null ? `${esc(d.district || "")}${d.district ? " · " : ""}${d.lat.toFixed(5)}, ${d.lng.toFixed(5)}` : ""}</div></div></div>
       <div class="pad" style="margin-top:8px"><button class="btn text" data-act="geolocate">${ico("my_location")}Определить моё местоположение</button></div>
@@ -67,8 +81,9 @@ export function viewCreate(): string {
     body = `<h2 class="step-title">Опишите проблему</h2><p class="step-sub">Коротко: что, где именно и почему опасно. Можно пропустить подробности.</p>
       <div class="stack pad">
         <div class="field"><label for="f-title">Заголовок</label><input class="input" id="f-title" maxlength="80" value="${esc(d.title)}" placeholder="Например: Яма на въезде во двор" aria-describedby="title-hint"><span class="hint" id="title-hint">От 5 до 80 символов</span></div>
-        <div class="field"><label for="f-desc">Подробности (необязательно)</label><textarea class="input" id="f-desc" maxlength="500" placeholder="Яма около 40 см, после дождя не видна">${esc(d.description)}</textarea><span class="hint num" id="desc-count">${d.description.length} / 500</span></div>
-      </div>`;
+        <div class="field"><label for="f-desc">Подробности (необязательно)</label><div class="input-wrap"><textarea class="input" id="f-desc" maxlength="500" placeholder="Яма около 40 см, после дождя не видна">${esc(d.description)}</textarea>${speechAvailable() ? `<button type="button" class="icon-btn mic ${wizard.listening ? "on" : ""}" data-act="voice" aria-pressed="${wizard.listening}" aria-label="${wizard.listening ? "Остановить диктовку" : "Надиктовать описание"}" title="Надиктовать голосом">${ico("mic")}</button>` : ""}</div><span class="hint num" id="desc-count">${d.description.length} / 500</span></div>
+      </div>
+      <div id="suggest-box">${suggestionHtml()}</div>`;
   } else if (d.step === 4) {
     const dups = wizard.dups ?? [];
     const k = cat(d.category ?? "other");

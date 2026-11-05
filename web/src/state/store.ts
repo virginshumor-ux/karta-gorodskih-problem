@@ -1,8 +1,10 @@
 import type { AuthState, Backend } from "../api/backend";
-import type { WeatherState } from "../api/weather";
+import type { AirState, WeatherState } from "../api/weather";
 import { DEFAULT_CATS } from "../domain/constants";
+import type { LatLng } from "../domain/format";
 import { emptyFilter, filterComplaints } from "../domain/logic";
-import type { AppNotification, Category, Complaint, Draft, User } from "../domain/types";
+import { sortComplaints } from "../domain/smart";
+import type { AppNotification, Category, Comment, Complaint, Draft, User } from "../domain/types";
 import type { MapMode } from "../map/tiles";
 import { ls } from "./storage";
 
@@ -40,6 +42,15 @@ export const S = {
   detailPhoto: 0,
   draft: null as Draft | null,
   weather: null as WeatherState | null,
+  air: null as AirState | null,
+  /** Last known position of the user (sorting "nearest first", distances in the list). */
+  origin: null as LatLng | null,
+  /** Density view of the main map instead of pins. */
+  heat: ls.get("heat", false),
+  /** Comments of the open complaint (null while loading). */
+  comments: { id: null as string | null, list: null as Comment[] | null },
+  /** Deferred PWA install prompt (Chromium "beforeinstallprompt"). */
+  installPrompt: null as (Event & { prompt(): Promise<void> }) | null,
   mapMode: "pending" as MapMode,
   pending: null as Pending,
   /** Feed is shown from the device cache because the server is unreachable. */
@@ -60,7 +71,8 @@ export function cat(id: string): Category {
 }
 
 export function filtered(): Complaint[] {
-  return filterComplaints(S.complaints, S.filter, S.search, { moderator: isModerator(), catName: (id) => cat(id).name });
+  const list = filterComplaints(S.complaints, S.filter, S.search, { moderator: isModerator(), catName: (id) => cat(id).name });
+  return sortComplaints(list, S.filter.sort, S.origin);
 }
 
 export function findComplaint(id: string | null): Complaint | null {

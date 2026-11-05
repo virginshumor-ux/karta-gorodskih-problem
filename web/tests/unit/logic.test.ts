@@ -11,7 +11,7 @@ function c(p: Partial<Complaint>): Complaint {
     id: "x", demo: false, title: "Яма на въезде во двор", category: "road", description: "Яма около 40 см.", lat: 55.9952, lng: 92.7965,
     address: "улица Борисова, 5", district: "Октябрьский район", status: "published", duplicateOf: null,
     createdAt: NOW - 3600e3, updatedAt: NOW, photos: [], author: "житель_1", mine: false, supports: 12, supportedByMe: false,
-    confirms: 0, confirmedByMe: false, history: [], ...p,
+    confirms: 0, confirmedByMe: false, history: [], comments: 0, ...p,
   };
 }
 

@@ -24,6 +24,32 @@ function moderatorHtml(c: Complaint): string {
     ${pendingAfter.map((p) => `<div class="pad row" style="margin-top:8px"><span class="small grow">Фото «после» ждёт проверки</span><button class="btn tonal" data-act="approveafter" data-photo-id="${esc(p.id)}">${ico("check")}Одобрить</button><button class="btn outline" data-act="rejectafter" data-photo-id="${esc(p.id)}">Отклонить</button></div>`).join("")}`;
 }
 
+function commentsHtml(c: Complaint): string {
+  const list = S.comments.id === c.id ? S.comments.list : null;
+  const u = user();
+  const mod = isModerator();
+  const items =
+    list === null
+      ? `<p class="small muted" role="status" style="margin:0">${S.offlineSince ? "Комментарии недоступны без сети." : "Загружаем обсуждение…"}</p>`
+      : list.length
+        ? list
+            .map(
+              (m) => `<div class="comment ${m.mine ? "mine" : ""} ${m.hidden ? "hidden" : ""}" data-comment="${esc(m.id)}">
+          <span class="av" aria-hidden="true">${esc((m.author[0] ?? "?").toUpperCase())}</span>
+          <div class="bubble"><div class="meta"><b>${esc(m.mine ? "Вы" : m.author)}</b><span>${fmtDate(m.at)}</span>${m.hidden ? "<span>· скрыт модератором</span>" : ""}${m.mine || (mod && !m.hidden) ? `<button data-act="delcomment" data-id="${esc(m.id)}" aria-label="${m.mine ? "Удалить комментарий" : "Скрыть комментарий"}">${m.mine ? "Удалить" : "Скрыть"}</button>` : ""}</div><div style="white-space:pre-wrap;overflow-wrap:anywhere">${esc(m.text)}</div></div>
+        </div>`,
+            )
+            .join("")
+        : `<p class="small muted" style="margin:0">Пока никто не написал. Расскажите, что изменилось на месте, — это поможет соседям и модератору.</p>`;
+  const form = u
+    ? `<form class="comment-form" data-form="comment" data-id="${esc(c.id)}"><textarea class="input grow" id="comment-text" maxlength="1000" rows="1" placeholder="Написать комментарий…" aria-label="Текст комментария"></textarea><button class="btn primary" type="submit" aria-label="Отправить комментарий">${ico("send")}</button></form>`
+    : `<div class="pad"><button class="btn tonal" data-act="commentlogin" data-id="${esc(c.id)}">${ico("forum")}Войти и написать комментарий</button></div>`;
+  return `<div class="section-title">Обсуждение${c.comments ? ` <span class="count num">${c.comments}</span>` : ""}</div>
+    <div class="comments" aria-live="polite">${items}</div>
+    <div style="margin-top:10px">${form}</div>
+    <p class="pad hint" style="margin-top:6px">Без оскорблений и личных данных. Комментарии видны всем; модератор может скрыть нарушающие правила.</p>`;
+}
+
 export function viewDetail(): string {
   const c = findComplaint(S.detailId);
   if (!c)
@@ -37,7 +63,7 @@ export function viewDetail(): string {
   const after = c.photos.filter((p) => p.kind === "after");
   const cur = photos[idx];
   return `<div class="screen">
-    <div class="hero">
+    <div class="hero" ${photos.length ? `data-act="lightbox" data-idx="${idx}" title="Открыть фото"` : ""}>
       ${photoHtml(c, idx)}
       <div class="hero-top"><button class="icon-btn" data-act="back" aria-label="Назад">${ico("arrow_back")}</button><button class="icon-btn" data-act="share" data-id="${esc(c.id)}" aria-label="Поделиться">${ico("share")}</button></div>
       ${photos.length ? (cur?.kind === "after" ? `<span class="hero-label">Фото «после»${cur.approved ? "" : " — ждёт проверки модератором"}</span>` : "") : `<span class="hero-label">Иллюстрация категории — фото не приложено${c.demo ? " (демо-данные)" : ""}</span>`}
@@ -67,6 +93,7 @@ export function viewDetail(): string {
     <div class="support-box"><b class="num">${c.supports}</b><span class="small">${plural(c.supports, "житель поддержал", "жителя поддержали", "жителей поддержали")} это обращение${c.status === "resolved_wait" ? `<br>Подтверждений решения: ${c.confirms} из ${CONFIRM_NEED}` : ""}</span></div>
     ${after.length && !photos.some((p) => p.kind === "after") ? `<p class="pad small muted">Автор приложил фото «после» — оно появится после проверки модератором.</p>` : ""}
     ${moderatorHtml(c)}
+    ${commentsHtml(c)}
     <div class="section-title">История статусов</div>
     ${c.history.length ? `<ol class="timeline">${c.history.map((h) => `<li><b>${STATUSES[h.status].name}</b><div class="small muted">${fmtDate(h.at)} · ${esc(h.by)}</div>${h.comment ? `<div class="small">${esc(h.comment)}</div>` : ""}</li>`).join("")}</ol>` : `<p class="pad small muted">${S.offlineSince ? "История недоступна без сети." : "Загружаем историю…"}</p>`}
     <div class="pad"><button class="btn text" data-act="report" data-id="${esc(c.id)}">${ico("flag")}Пожаловаться на обращение</button></div>

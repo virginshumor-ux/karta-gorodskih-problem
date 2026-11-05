@@ -54,7 +54,7 @@ export function filterComplaints(all: Complaint[], f: Filter, search: string, ct
 }
 
 export function emptyFilter(): Filter {
-  return { cats: new Set(), status: "open", mine: false, district: "", period: "all" };
+  return { cats: new Set(), status: "open", mine: false, district: "", period: "all", sort: "new" };
 }
 
 /** Rows for the anonymous CSV export (Ф-22): UTF-8, separator ";". */

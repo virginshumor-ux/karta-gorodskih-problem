@@ -55,6 +55,23 @@ export interface Complaint {
   confirmedByMe: boolean;
   /** Loaded with the detail screen; empty in the feed. */
   history: HistoryItem[];
+  comments: number;
+}
+
+export interface Comment {
+  id: string;
+  complaintId: string;
+  text: string;
+  author: string;
+  mine: boolean;
+  hidden: boolean;
+  at: number;
+}
+
+export interface HomeArea {
+  lat: number;
+  lng: number;
+  radius: number;
 }
 
 export interface AppNotification {
@@ -76,7 +93,8 @@ export interface User {
   role: Role;
   notifyEnabled: boolean;
   isBlocked: boolean;
-  stats: { complaints: number; solved: number; supported: number };
+  stats: { complaints: number; solved: number; supported: number; confirmed: number; comments: number };
+  home: HomeArea | null;
 }
 
 export interface Filter {
@@ -85,6 +103,7 @@ export interface Filter {
   mine: boolean;
   district: string;
   period: "all" | "7" | "30";
+  sort: "new" | "near" | "popular";
 }
 
 export interface Draft {
@@ -102,6 +121,8 @@ export interface Draft {
   description: string;
   createdId?: string;
   savedOffline?: boolean;
+  /** The place was taken from the photo's GPS tag (EXIF). */
+  fromExif?: boolean;
 }
 
 export interface Duplicate {
@@ -121,7 +142,7 @@ export interface Stats {
   byDay: { day: string; n: number }[];
   byCategory: { categoryId: string; n: number }[];
   byStatus: { status: Status; n: number }[];
-  byDistrict: { district: string; n: number }[];
+  byDistrict: { district: string; n: number; resolved: number }[];
   medianModerationHours: number | null;
   medianResolutionDays: number | null;
 }

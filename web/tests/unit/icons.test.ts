@@ -17,6 +17,11 @@ describe("icon font subset", () => {
       for (const m of s.matchAll(/ico\([^)]*\? "([a-z_0-9]+)" : "([a-z_0-9]+)"/g)) [m[1], m[2]].forEach((x) => used.add(x as string));
       // navigation tables: ["map", "map", "Карта"]
       for (const m of s.matchAll(/\["[a-z]+", "([a-z_]+)", "[А-Яа-яЁё «»]*"\]/g)) used.add(m[1] as string);
+      // icons in data objects ({ icon: "air" }) and achievement rows: a("first", "flag", …)
+      for (const m of s.matchAll(/icon: "([a-z_0-9]+)"/g)) used.add(m[1] as string);
+      for (const m of s.matchAll(/\ba\("[a-z]+", "([a-z_0-9]+)"/g)) used.add(m[1] as string);
+      // raw glyph spans: <span class="ms" …>navigation</span>
+      for (const m of s.matchAll(/class="ms"[^>]*>([a-z_0-9]+)</g)) used.add(m[1] as string);
       // WMO weather codes: ["Ясно", "clear_day", "clear_night"]
       for (const m of s.matchAll(/\["[А-Яа-яЁё ,—]+", "([a-z_]+)", "([a-z_]+)"\]/g)) [m[1], m[2]].forEach((x) => used.add(x as string));
     }

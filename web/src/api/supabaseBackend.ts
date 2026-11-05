@@ -6,9 +6,11 @@ import type {
   AdminUser,
   AppNotification,
   Category,
+  Comment,
   Complaint,
   Duplicate,
   HistoryItem,
+  HomeArea,
   Photo,
   Report,
   Role,
@@ -40,6 +42,7 @@ interface FeedRow {
   supported_by_me: boolean;
   confirmed_by_me: boolean;
   photos: { id: string; path: string; kind: "before" | "after"; approved: boolean }[];
+  comments_count?: number;
 }
 
 interface ProfileJson {
@@ -52,10 +55,15 @@ interface ProfileJson {
   complaints: number;
   solved: number;
   supported: number;
+  confirmed?: number;
+  comments?: number;
+  home_lat?: number | null;
+  home_lng?: number | null;
+  home_radius_m?: number | null;
 }
 
 const FEED_COLUMNS =
-  "id,category_id,title,description,lat,lng,address,district,status,duplicate_of,supports_count,confirms_count,is_demo,created_at,updated_at,author_nickname,is_mine,supported_by_me,confirmed_by_me,photos";
+  "id,category_id,title,description,lat,lng,address,district,status,duplicate_of,supports_count,confirms_count,is_demo,created_at,updated_at,author_nickname,is_mine,supported_by_me,confirmed_by_me,photos,comments_count";
 const SIGNED_TTL = 3600;
 
 function check<T>(r: { data: T; error: unknown }): T {
@@ -128,7 +136,8 @@ export class SupabaseBackend implements Backend {
       role: p.role,
       notifyEnabled: p.notify_enabled,
       isBlocked: p.is_blocked,
-      stats: { complaints: p.complaints, solved: p.solved, supported: p.supported },
+      stats: { complaints: p.complaints, solved: p.solved, supported: p.supported, confirmed: p.confirmed ?? 0, comments: p.comments ?? 0 },
+      home: p.home_lat != null && p.home_lng != null ? { lat: p.home_lat, lng: p.home_lng, radius: p.home_radius_m ?? 500 } : null,
     };
   }
 
@@ -139,6 +148,10 @@ export class SupabaseBackend implements Backend {
       .channel("complaints")
       .on("postgres_changes", { event: "*", schema: "public", table: "complaints" }, (p) => {
         const id = (p.new as { id?: string })?.id ?? (p.old as { id?: string })?.id;
+        if (id) this.events?.onComplaintChanged(id);
+      })
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "complaint_comments" }, (p) => {
+        const id = (p.new as { complaint_id?: string })?.complaint_id;
         if (id) this.events?.onComplaintChanged(id);
       })
       .subscribe();
@@ -247,6 +260,7 @@ export class SupabaseBackend implements Backend {
       confirms: r.confirms_count,
       confirmedByMe: r.confirmed_by_me,
       history: [],
+      comments: r.comments_count ?? 0,
     };
   }
 
@@ -266,7 +280,7 @@ export class SupabaseBackend implements Backend {
       by_day: { day: string; n: number }[];
       by_category: { category_id: string; n: number }[];
       by_status: { status: Status; n: number }[];
-      by_district: { district: string; n: number }[];
+      by_district: { district: string; n: number; resolved?: number }[];
       median_moderation_hours: number | null;
       median_resolution_days: number | null;
     };
@@ -278,7 +292,7 @@ export class SupabaseBackend implements Backend {
       byDay: s.by_day,
       byCategory: s.by_category.map((x) => ({ categoryId: x.category_id, n: x.n })),
       byStatus: s.by_status,
-      byDistrict: s.by_district,
+      byDistrict: s.by_district.map((d) => ({ district: d.district, n: d.n, resolved: d.resolved ?? 0 })),
       medianModerationHours: s.median_moderation_hours,
       medianResolutionDays: s.median_resolution_days,
     };
@@ -409,6 +423,28 @@ export class SupabaseBackend implements Backend {
 
   async markRead(ids?: string[]): Promise<void> {
     check(await this.sb.rpc("mark_notifications_read", { p_ids: ids ?? null }));
+  }
+
+  async comments(complaintId: string): Promise<Comment[]> {
+    const rows = check(
+      await this.sb.from("comment_feed").select("id,complaint_id,text,is_hidden,created_at,author_nickname,is_mine").eq("complaint_id", complaintId).order("created_at").limit(500),
+    ) as { id: string; complaint_id: string; text: string; is_hidden: boolean; created_at: string; author_nickname: string; is_mine: boolean }[];
+    return rows.map((r) => ({ id: r.id, complaintId: r.complaint_id, text: r.text, author: r.author_nickname, mine: r.is_mine, hidden: r.is_hidden, at: Date.parse(r.created_at) }));
+  }
+
+  async addComment(complaintId: string, text: string): Promise<void> {
+    check(await this.sb.rpc("add_comment", { p_complaint: complaintId, p_text: text }));
+  }
+
+  async deleteComment(id: string): Promise<void> {
+    check(await this.sb.rpc("delete_comment", { p_comment: id }));
+  }
+
+  async setHomeArea(area: HomeArea | null): Promise<User> {
+    const p = check(await this.sb.rpc("set_home_area", { p_lat: area?.lat ?? null, p_lng: area?.lng ?? null, p_radius_m: area?.radius ?? null })) as ProfileJson;
+    const u = this.toUser(p);
+    await kvSet("profile", u);
+    return u;
   }
 
   // ---------- moderation and administration ----------

@@ -2,8 +2,9 @@ import type * as Leaflet from "leaflet";
 import { L } from "./leaflet";
 import "leaflet.markercluster";
 import "leaflet.markercluster/dist/MarkerCluster.css";
+import { HeatLayer } from "leaflet.heat";
 import { ico } from "../domain/format";
-import type { Category, Complaint } from "../domain/types";
+import type { Category, Complaint, HomeArea } from "../domain/types";
 import { makeBase, type MapMode } from "./tiles";
 
 export function pinIcon(c: Complaint, cat: Category, sel: boolean): Leaflet.DivIcon {
@@ -19,6 +20,10 @@ export function pinIcon(c: Complaint, cat: Category, sel: boolean): Leaflet.DivI
 export interface MainMap {
   map: Leaflet.Map;
   draw(list: Complaint[], selected: string | null): void;
+  /** Density view instead of pins; null switches back to pins. */
+  setHeat(list: Complaint[] | null): void;
+  /** Circle of the user's home area (alerts about new complaints nearby). */
+  setHome(home: HomeArea | null): void;
 }
 
 /** Ф-01: map with category pins; pins cluster when zoomed out and split at street level. */
@@ -53,8 +58,33 @@ export function createMainMap(
   map.on("click", () => opts.onSelect(null));
 
   let fitted = false;
+  // leaflet.heat ships types for Leaflet 2 (generic Layer); with Leaflet 1.9 types it is used through this shape.
+  let heat: (Leaflet.Layer & { setLatLngs(p: [number, number, number][]): unknown }) | null = null;
+  let home: Leaflet.Circle | null = null;
   return {
     map,
+    setHeat(list) {
+      if (!list) {
+        if (heat) map.removeLayer(heat);
+        heat = null;
+        if (!map.hasLayer(cluster)) map.addLayer(cluster);
+        return;
+      }
+      // Weight: one point per complaint plus its supports, so widely supported problems glow brighter.
+      const pts = list.map((c) => [c.lat, c.lng, 0.4 + Math.min(c.supports, 30) / 30] as [number, number, number]);
+      if (heat) heat.setLatLngs(pts);
+      else {
+        heat = new HeatLayer(pts, { radius: 28, blur: 22, minOpacity: 0.35, max: 1, maxZoom: 15, gradient: { 0.3: "#2fb6bf", 0.55: "#f2b33d", 0.8: "#f0611c", 1: "#b3261e" } }) as unknown as NonNullable<typeof heat>;
+        map.addLayer(heat);
+      }
+      if (map.hasLayer(cluster)) map.removeLayer(cluster);
+    },
+    setHome(h) {
+      if (home) map.removeLayer(home);
+      home = h
+        ? L.circle([h.lat, h.lng], { radius: h.radius, color: "#0a6670", weight: 2, dashArray: "6 6", fillColor: "#12949c", fillOpacity: 0.08, interactive: false }).addTo(map)
+        : null;
+    },
     draw(list, selected) {
       cluster.clearLayers();
       const markers = list.map((c) => {

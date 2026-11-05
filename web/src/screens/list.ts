@@ -1,13 +1,19 @@
 import { DISTRICTS } from "../domain/constants";
 import { esc, ico, plural } from "../domain/format";
 import { filtered, S } from "../state/store";
-import { itemHtml, offlineBanner, topbar } from "./common";
+import { itemHtml, offlineBanner, skeletonList, topbar } from "./common";
+
+const SORTS: [typeof S.filter.sort, string, string][] = [
+  ["new", "schedule", "Новые"],
+  ["near", "near_me", "Рядом"],
+  ["popular", "trending_up", "Популярные"],
+];
 
 export function viewList(): string {
   const f = S.filter;
   const districts = [...new Set([...DISTRICTS, ...S.complaints.map((c) => c.district).filter(Boolean)])].sort((a, b) => a.localeCompare(b, "ru"));
   return `<div class="screen">
-    ${topbar("Обращения", { backBtn: false, right: `<button class="icon-btn" data-go="map" aria-label="Показать на карте">${ico("map")}</button>` })}
+    ${topbar("Обращения", { backBtn: false, right: `<button class="icon-btn" data-act="palette" aria-label="Быстрый поиск (Ctrl+K)" title="Быстрый поиск (Ctrl+K)">${ico("search")}</button><button class="icon-btn mobile-only" data-go="map" aria-label="Показать на карте">${ico("map")}</button>` })}
     ${offlineBanner()}
     <div class="pad"><input class="input" id="search" type="search" placeholder="Поиск по адресу или описанию" value="${esc(S.search)}" aria-label="Поиск"></div>
     <div class="row" style="overflow-x:auto;padding:12px 16px 4px;scrollbar-width:none">
@@ -19,14 +25,15 @@ export function viewList(): string {
       <label class="select-wrap grow">${ico("location_city")}<select id="f-district" aria-label="Район"><option value="">Все районы</option>${districts.map((d) => `<option ${f.district === d ? "selected" : ""}>${esc(d)}</option>`).join("")}</select></label>
       <label class="select-wrap grow">${ico("date_range")}<select id="f-period" aria-label="Период"><option value="all" ${f.period === "all" ? "selected" : ""}>За всё время</option><option value="7" ${f.period === "7" ? "selected" : ""}>За 7 дней</option><option value="30" ${f.period === "30" ? "selected" : ""}>За 30 дней</option></select></label>
     </div>
+    <div class="row pad" style="margin-top:4px"><div class="seg" role="group" aria-label="Сортировка">${SORTS.map(([k, i, t]) => `<button data-sort="${k}" aria-pressed="${f.sort === k}">${ico(i)}${t}</button>`).join("")}</div></div>
     <div id="list-results">${listResults()}</div>
   </div>`;
 }
 
 export function listResults(): string {
-  if (S.loading && !S.complaints.length)
-    return `<div class="empty" role="status">${ico("hourglass_top")}<p>Загружаем обращения…</p></div>`;
+  if (S.loading && !S.complaints.length) return skeletonList();
   const items = filtered();
-  return `<p class="pad small muted" style="margin:8px 0">${items.length} ${plural(items.length, "обращение", "обращения", "обращений")} · сначала новые</p>
+  const order = { new: "сначала новые", near: S.origin ? "сначала ближайшие" : "сначала новые (местоположение неизвестно)", popular: "сначала самые поддержанные" }[S.filter.sort];
+  return `<p class="pad small muted" style="margin:10px 0 8px">${items.length} ${plural(items.length, "обращение", "обращения", "обращений")} · ${order}</p>
     ${items.length ? `<div class="c-list">${items.map(itemHtml).join("")}</div>` : `<div class="empty">${ico("search_off")}<p>Ничего не найдено. Сбросьте фильтры или сообщите о новой проблеме.</p><button class="btn tonal" data-act="resetfilters">Сбросить фильтры</button></div>`}`;
 }

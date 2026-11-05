@@ -15,7 +15,7 @@ if [ ! -f "$PGDATA/PG_VERSION" ]; then
   "$PGBIN/initdb" -D "$PGDATA" -U postgres -A trust -E UTF8 --locale=C >/dev/null
 fi
 if ! "$PGBIN/pg_ctl" -D "$PGDATA" status >/dev/null 2>&1; then
-  "$PGBIN/pg_ctl" -D "$PGDATA" -o "-p $PORT" -l "$PGDATA/server.log" -w start >/dev/null
+  "$PGBIN/pg_ctl" -D "$PGDATA" -o "-p $PORT" -l "$PGDATA/server.log" -w start >/dev/null 2>&1 </dev/null
 fi
 
 psql() { "$PGBIN/psql" -X -q -v ON_ERROR_STOP=1 "$@"; }

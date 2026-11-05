@@ -1,13 +1,30 @@
 import { CONFIRM_NEED, DAY, DEFAULT_CATS, MAX_PER_HOUR, OPEN_STATUSES, STATUSES } from "../domain/constants";
 import { AppError } from "../domain/errors";
 import { distM, plural, uuid } from "../domain/format";
-import type { AdminUser, AppNotification, Category, Complaint, Duplicate, HistoryItem, Report, Role, Stats, Status, User } from "../domain/types";
+import type { AdminUser, AppNotification, Category, Comment, Complaint, Duplicate, HistoryItem, HomeArea, Report, Role, Stats, Status, User } from "../domain/types";
 import { ls } from "../state/storage";
 import type { AuthState, Backend, BackendEvents, NewComplaint } from "./backend";
 import { db, type LocalComplaint } from "./db";
 import { blobToDataUrl } from "./photos";
 
 const ME = "local-user";
+/** Bumped when the demo data changes, so returning visitors get the new seed (v2: comments). */
+const SEED_VERSION = 2;
+
+/** Demo discussion: [author, text, hours ago]. */
+const DEMO_COMMENTS: Record<number, [string, string, number][]> = {
+  1: [
+    ["житель_214", "Сегодня утром посыпали песком только половину ступеней, у правого края всё ещё лёд.", 20],
+    ["студент_ИУБП", "Подтверждаю, в 8:30 было очень скользко. Поддержал обращение.", 6],
+  ],
+  8: [
+    ["житель_377", "Видел, как ночью подъезжал грузовик и выгружал мусор. Номер не разглядел.", 50],
+    ["житель_101", "Это территория гаражного кооператива, можно написать и председателю.", 30],
+    ["житель_377", "Председателю писали в сентябре — без ответа.", 26],
+  ],
+  9: [["житель_408", "Начали ремонт: сегодня сняли старый асфальт на половине участка.", 9]],
+  15: [["житель_256", "Поставил рядом временное ограждение из веток, но это ненадолго.", 30]],
+};
 const ORG = Object.fromEntries(DEFAULT_CATS.map((c) => [c.id, c.org]));
 
 /** Demo data of the prototype (seedComplaints in app.js); "mine" items belong to whoever signs in locally. */
@@ -77,6 +94,8 @@ function seedComplaints(now = Date.now()): LocalComplaint[] {
       confirmedByMe: false,
       confirmers: [],
       history: hist.reverse(),
+      comments: (DEMO_COMMENTS[o.n] ?? []).length,
+      commentList: (DEMO_COMMENTS[o.n] ?? []).map(([author, text, ago], i) => ({ id: `demo-${o.n}-c${i}`, text, author, authorId: "demo-" + author, at: now - ago * 36e5, hidden: false })),
     };
   });
 }
@@ -118,7 +137,10 @@ export class LocalBackend implements Backend {
         complaints: mine.length,
         solved: mine.filter((c) => c.status === "resolved" || c.status === "resolved_wait").length,
         supported: all.filter((c) => c.supporters.includes(ME)).length,
+        confirmed: all.filter((c) => c.confirmers.includes(ME)).length,
+        comments: all.reduce((n, c) => n + (c.commentList ?? []).filter((x) => x.authorId === ME && !x.hidden).length, 0),
       },
+      home: ls.get<HomeArea | null>("local.home", null),
     };
   }
 
@@ -132,11 +154,11 @@ export class LocalBackend implements Backend {
     this.events = events;
     const d = await db();
     let cs = d ? await d.getAll("local_complaints") : [];
-    if (!cs.length || !ls.get("local.seeded", false)) {
+    if (!cs.length || ls.get("local.seedVersion", 0) !== SEED_VERSION) {
       cs = seedComplaints();
       for (const c of cs) await this.put(c);
       for (const n of seedNotifications()) await this.putN(n);
-      ls.set("local.seeded", true);
+      ls.set("local.seedVersion", SEED_VERSION);
     }
     for (const c of cs) this.mem.set(c.id, c);
     if (d) for (const n of await d.getAll("local_notifications")) this.memN.set(n.id, n);
@@ -152,7 +174,7 @@ export class LocalBackend implements Backend {
     }
     this.mem.clear();
     this.memN.clear();
-    ls.set("local.seeded", false);
+    ls.set("local.seedVersion", 0);
     await this.init(this.events as BackendEvents);
   }
 
@@ -175,6 +197,7 @@ export class LocalBackend implements Backend {
       confirmedByMe: c.confirmers.includes(ME),
       photos: c.photos.map((p) => ({ id: p.id, path: p.id, kind: p.kind, approved: p.approved, url: p.data })),
       history: c.history,
+      comments: (c.commentList ?? []).filter((x) => !x.hidden).length,
     };
   }
 
@@ -244,7 +267,9 @@ export class LocalBackend implements Backend {
       byDay,
       byCategory: count((c) => c.category).map(([categoryId, n]) => ({ categoryId, n })),
       byStatus: count((c) => c.status).map(([status, n]) => ({ status, n })),
-      byDistrict: count((c) => c.district || "Район не определён").map(([district, n]) => ({ district, n })),
+      byDistrict: count((c) => c.district || "Район не определён").map(([district, n]) => ({
+        district, n, resolved: all.filter((c) => (c.district || "Район не определён") === district && c.status === "resolved").length,
+      })),
       medianModerationHours: null,
       medianResolutionDays: null,
     };
@@ -312,6 +337,7 @@ export class LocalBackend implements Backend {
       address: n.address, district: n.district, status: "moderation", duplicateOf: null, createdAt: Date.now(), updatedAt: Date.now(),
       photos, author: u.nick, authorId: ME, mine: true, supports: 0, supportedByMe: false, supporters: [], confirms: 0, confirmedByMe: false, confirmers: [],
       history: [{ status: "moderation", at: Date.now(), by: "Вы", comment: "Обращение создано" }],
+      comments: 0, commentList: [],
     };
     await this.put(c);
     await this.notify(c, `Обращение «${c.title}» отправлено на модерацию`);
@@ -391,6 +417,42 @@ export class LocalBackend implements Backend {
     if (!this.user()) return [];
     return [...this.memN.values()].sort((a, b) => b.at - a.at);
   }
+  async comments(complaintId: string): Promise<Comment[]> {
+    const c = this.mem.get(complaintId);
+    const mod = ls.get("moderator", false);
+    return (c?.commentList ?? [])
+      .filter((x) => !x.hidden || x.authorId === ME || mod)
+      .map((x) => ({ id: x.id, complaintId, text: x.text, author: x.author, mine: x.authorId === ME, hidden: x.hidden, at: x.at }));
+  }
+  async addComment(complaintId: string, text: string): Promise<void> {
+    const u = this.need();
+    const t = text.replace(/\s+/g, " ").trim();
+    if (t.length < 1 || t.length > 1000) throw new AppError("Комментарий — от 1 до 1000 символов.", "KGP_COMMENT_LENGTH");
+    const c = this.get(complaintId);
+    c.commentList = [...(c.commentList ?? []), { id: uuid(), text: t, author: u.nick, authorId: ME, at: Date.now(), hidden: false }];
+    await this.put(c);
+    this.events?.onComplaintChanged(c.id);
+  }
+  async deleteComment(id: string): Promise<void> {
+    this.need();
+    const mod = ls.get("moderator", false);
+    for (const c of this.mem.values()) {
+      const x = (c.commentList ?? []).find((y) => y.id === id);
+      if (!x) continue;
+      if (x.authorId === ME) c.commentList = (c.commentList ?? []).filter((y) => y.id !== id);
+      else if (mod) x.hidden = true;
+      else throw new AppError("Удалить можно только свой комментарий.", "KGP_NOT_ALLOWED");
+      await this.put(c);
+      this.events?.onComplaintChanged(c.id);
+    }
+  }
+  async setHomeArea(area: HomeArea | null): Promise<User> {
+    if (area && !(area.lat > 55.9 && area.lat < 56.14 && area.lng > 92.6 && area.lng < 93.2))
+      throw new AppError("Точка за пределами Красноярска.", "KGP_OUT_OF_CITY");
+    ls.set("local.home", area ? { ...area, radius: Math.min(3000, Math.max(100, area.radius)) } : null);
+    return this.need();
+  }
+
   async markRead(ids?: string[]): Promise<void> {
     for (const n of this.memN.values()) if (!ids || ids.includes(n.id)) if (!n.read) await this.putN({ ...n, read: true });
   }

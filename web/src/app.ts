@@ -1,22 +1,22 @@
 import type * as Leaflet from "leaflet";
 import type { AuthState, Backend, NewComplaint } from "./api/backend";
 import { deleteDraft, kvGet, kvSet, listDrafts, saveDraft } from "./api/db";
-import { geocodePoint } from "./api/geocode";
+import { geocodePoint, searchPlaces } from "./api/geocode";
 import { LocalBackend } from "./api/localBackend";
 import { compress, demoPhoto } from "./api/photos";
-import { cachedWeather, fetchWeather } from "./api/weather";
+import { cachedAir, cachedWeather, fetchAir, fetchWeather } from "./api/weather";
 import { complaintUrl, CONFIG } from "./config";
 import { CAMPUS, CONFIRM_NEED, REPORT_REASONS, STATUSES } from "./domain/constants";
 import { AppError, toAppError } from "./domain/errors";
-import { distM, esc, ico, inKrsk, uuid } from "./domain/format";
+import { distM, esc, ico, inKrsk, uuid, type LatLng } from "./domain/format";
 import { appealText, emptyFilter, toCsv } from "./domain/logic";
-import type { Complaint, Status, User } from "./domain/types";
+import type { Complaint, HomeArea, Status, User } from "./domain/types";
 import { L } from "./map/leaflet";
 import { createMainMap, pinIcon, type MainMap } from "./map/mainMap";
 import { makeBase } from "./map/tiles";
 import { admin, adminHtml, type AdminTab } from "./screens/admin";
-import { navHtml } from "./screens/common";
-import { stepReady, viewCreate, wizard } from "./screens/create";
+import { galleryPhotos, navHtml } from "./screens/common";
+import { speechAvailable, stepReady, suggestionHtml, viewCreate, wizard } from "./screens/create";
 import { viewAppeal, viewDetail } from "./screens/detail";
 import { hudHtml } from "./screens/hud";
 import { listResults, viewList } from "./screens/list";
@@ -25,10 +25,13 @@ import { hashFor, parseHash, type Route } from "./state/router";
 import { ls } from "./state/storage";
 import { cat, filtered, findComplaint, isDesktop, isModerator, S, upsertComplaint, user, type Pending, type View } from "./state/store";
 import { $, closeModal, closeOverlay, markdown, modalOpen, openModal, overlayOpen, toast } from "./ui/dom";
+import { closeLightbox, lightboxOpen, openLightbox } from "./ui/lightbox";
+import { closePalette, openPalette, paletteOpen, type PaletteItem } from "./ui/palette";
 
 let mainMap: MainMap | null = null;
 let placeMap: Leaflet.Map | null = null;
 let miniMap: Leaflet.Map | null = null;
+let homeMap: Leaflet.Map | null = null;
 let statsCache: Awaited<ReturnType<Backend["stats"]>> | null = null;
 
 // ---------- rendering ----------
@@ -52,7 +55,10 @@ function renderHud(): void {
 }
 
 function drawMarkers(): void {
-  mainMap?.draw(filtered(), S.selected);
+  const list = filtered();
+  mainMap?.draw(list, S.selected);
+  mainMap?.setHeat(S.heat ? list : null);
+  mainMap?.setHome(user()?.home ?? null);
 }
 
 function destroySubmaps(): void {
@@ -122,6 +128,19 @@ function afterRender(v: View): void {
       }
     }
     $("#after-input")?.addEventListener("change", onAfterPhoto);
+    if (c && S.comments.id !== c.id) void loadComments(c.id);
+    const ta = $<HTMLTextAreaElement>("#comment-text");
+    ta?.addEventListener("input", () => {
+      ta.style.height = "48px";
+      ta.style.height = Math.min(160, ta.scrollHeight + 2) + "px";
+    });
+    ta?.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) $<HTMLFormElement>('[data-form="comment"]')?.requestSubmit();
+    });
+    $<HTMLFormElement>('[data-form="comment"]')?.addEventListener("submit", (e) => {
+      e.preventDefault();
+      void sendComment((e.currentTarget as HTMLElement).dataset.id as string);
+    });
   }
   if (v === "create" && S.draft) {
     const d = S.draft;
@@ -154,13 +173,19 @@ function afterRender(v: View): void {
     if (d.step === 3) {
       const t = $("#f-title") as HTMLInputElement;
       const ds = $("#f-desc") as HTMLTextAreaElement;
+      const suggest = () => {
+        const box = $("#suggest-box");
+        if (box) box.innerHTML = suggestionHtml();
+      };
       t.addEventListener("input", () => {
         d.title = t.value;
         updateNext();
+        suggest();
       });
       ds.addEventListener("input", () => {
         d.description = ds.value;
         setText("#desc-count", `${d.description.length} / 500`);
+        suggest();
       });
       // Focus right away (a delayed focus could steal it from the description field).
       if (!document.activeElement || document.activeElement === document.body) t.focus({ preventScroll: true });
@@ -331,6 +356,45 @@ function refreshFeedSoon(): void {
   }, 600);
 }
 
+/** Background refresh that never steals focus: markers, the HUD and the list results only. */
+function softRefresh(): void {
+  drawMarkers();
+  if (S.view === "map" || isDesktop()) renderHud();
+  if (S.view === "list") {
+    const r = $("#list-results");
+    if (r) r.innerHTML = listResults();
+  }
+}
+
+async function loadComments(id: string): Promise<void> {
+  if (S.comments.id !== id) S.comments = { id, list: null };
+  try {
+    const list = await S.backend.comments(id);
+    if (S.comments.id !== id) return;
+    S.comments.list = list;
+  } catch {
+    if (S.comments.id === id && S.comments.list === null) S.comments.list = null;
+  }
+  if (S.view === "detail" && S.detailId === id) refresh();
+}
+
+async function sendComment(id: string): Promise<void> {
+  const ta = $<HTMLTextAreaElement>("#comment-text");
+  const text = (ta?.value ?? "").trim();
+  if (!text) {
+    ta?.focus();
+    return;
+  }
+  const btn = $<HTMLButtonElement>('[data-form="comment"] button');
+  if (btn) btn.disabled = true;
+  const r = await act(() => S.backend.addComment(id, text));
+  if (btn) btn.disabled = false;
+  if (r === FAIL) return;
+  // The counter comes from the server (a trigger recounts it), so the complaint is reloaded rather than incremented.
+  await Promise.all([loadComments(id), loadDetail(id)]);
+  softRefresh();
+}
+
 async function loadNotifications(): Promise<void> {
   try {
     S.notifications = await S.backend.notifications();
@@ -395,6 +459,7 @@ async function onPhotos(e: Event): Promise<void> {
   const input = e.target as HTMLInputElement;
   const files = [...(input.files ?? [])].slice(0, 3 - d.photos.length);
   for (const f of files) {
+    if (d.lat == null) await placeFromExif(f, d);
     try {
       const b = await compress(f);
       d.photos.push(b);
@@ -404,6 +469,23 @@ async function onPhotos(e: Event): Promise<void> {
     }
   }
   render();
+}
+
+/** Smart create: a photo with a GPS tag inside Krasnoyarsk presets the place (the compressed upload has no EXIF). */
+async function placeFromExif(f: File, d: NonNullable<typeof S.draft>): Promise<void> {
+  try {
+    const { gps } = await import("exifr");
+    const g = await gps(f);
+    const p = g && { lat: g.latitude, lng: g.longitude };
+    if (p && Number.isFinite(p.lat) && Number.isFinite(p.lng) && inKrsk(p)) {
+      d.lat = p.lat;
+      d.lng = p.lng;
+      d.fromExif = true;
+      void reverseGeocode();
+    }
+  } catch {
+    /* no tag or unreadable — the user marks the place on the map */
+  }
 }
 
 let geoTimer: ReturnType<typeof setTimeout> | undefined;
@@ -579,6 +661,13 @@ async function runAction(a: string, id: string): Promise<void> {
   } else if (a === "notfixed") {
     const r = await act(() => S.backend.confirm(id, false), "Обращение снова в списке актуальных");
     if (r !== FAIL) await reloadComplaint(id);
+  } else if (a === "comment") {
+    if (S.view !== "detail" || S.detailId !== id) openDetail(id);
+    setTimeout(() => {
+      const ta = $<HTMLTextAreaElement>("#comment-text");
+      ta?.scrollIntoView({ block: "center" });
+      ta?.focus();
+    }, 150);
   } else if (a === "report") {
     openModal(`<h3>Пожаловаться на обращение</h3><p class="small muted" style="margin:0">Модератор проверит обращение и скроет его, если оно нарушает правила.</p>
       <div class="stack" style="gap:8px" role="radiogroup">${REPORT_REASONS.map((r, i) => `<label class="row"><input type="radio" name="rep" value="${i}" ${i === 0 ? "checked" : ""} style="width:20px;height:20px;margin:0"> <span>${r}</span></label>`).join("")}</div>
@@ -591,6 +680,7 @@ const NEEDS_LOGIN: Record<string, string> = {
   confirm: "Войдите, чтобы подтвердить решение.",
   notfixed: "Войдите, чтобы отметить, что проблема не решена.",
   report: "Войдите, чтобы пожаловаться на обращение.",
+  comment: "Войдите, чтобы участвовать в обсуждении.",
 };
 
 async function onAfterPhoto(e: Event): Promise<void> {
@@ -623,6 +713,149 @@ function duplicateModal(id: string): void {
   openModal(`<h3>Объединить с похожим обращением</h3><p class="small muted" style="margin:0">«${esc(c.title)}» станет дубликатом, а его автор — поддержавшим основное обращение.</p>
     ${cands.length ? `<div class="stack" style="gap:8px">${cands.map((x, i) => `<label class="row" style="align-items:flex-start"><input type="radio" name="dup" value="${esc(x.id)}" ${i === 0 ? "checked" : ""} style="width:20px;height:20px;margin:2px 0 0;flex:none"> <span><b>${esc(x.title)}</b><br><span class="small muted">${esc(cat(x.category).name)} · ${Math.round(distM(x, c))} м · ${STATUSES[x.status].name}</span></span></label>`).join("")}</div>` : `<p class="small">Рядом (до 400 м) других обращений нет.</p>`}
     <div class="row"><button class="btn outline grow" data-act="closemodal">Отмена</button><button class="btn primary grow" data-act="dodup" data-id="${esc(id)}" ${cands.length ? "" : "disabled"}>Объединить</button></div>`);
+}
+
+const RADII = [300, 500, 1000, 2000];
+let homeDraft: HomeArea | null = null;
+
+function homeModal(): void {
+  const u = user();
+  if (!u) return;
+  const c = mainMap?.map.getCenter();
+  homeDraft = u.home ? { ...u.home } : { lat: c?.lat ?? CAMPUS.lat, lng: c?.lng ?? CAMPUS.lng, radius: 500 };
+  openModal(`<h3>Мой район</h3><p class="small muted" style="margin:0">Передвиньте карту так, чтобы метка стояла у вашего дома. Мы сообщим о новых обращениях в выбранном радиусе. Точка видна только вам и не публикуется.</p>
+    <div class="place-map" style="margin:0;height:260px;min-height:0"><div id="homemap" style="position:absolute;inset:0"></div><div class="place-pin">${ico("home_pin", "fill")}</div></div>
+    <div class="seg" role="group" aria-label="Радиус" style="align-self:flex-start">${RADII.map((r) => `<button data-radius="${r}" aria-pressed="${homeDraft?.radius === r}">${r >= 1000 ? r / 1000 + " км" : r + " м"}</button>`).join("")}</div>
+    <div class="row">${u.home ? `<button class="btn outline grow" data-act="clearhome">Отключить</button>` : `<button class="btn outline grow" data-act="closemodal">Отмена</button>`}<button class="btn primary grow" data-act="savehome">Сохранить</button></div>`);
+  homeMap?.remove();
+  const el = $("#homemap");
+  if (!el || !homeDraft) return;
+  homeMap = L.map(el, { zoomControl: false, attributionControl: false }).setView([homeDraft.lat, homeDraft.lng], 15);
+  makeBase(homeMap);
+  const circle = L.circle([homeDraft.lat, homeDraft.lng], { radius: homeDraft.radius, color: "#0a6670", weight: 2, fillOpacity: 0.1, interactive: false }).addTo(homeMap);
+  const sync = () => {
+    if (!homeMap || !homeDraft) return;
+    const p = homeMap.getCenter();
+    homeDraft.lat = p.lat;
+    homeDraft.lng = p.lng;
+    circle.setLatLng(p).setRadius(homeDraft.radius);
+  };
+  homeMap.on("move", sync);
+  homeCircle = (r) => {
+    if (!homeDraft) return;
+    homeDraft.radius = r;
+    circle.setRadius(r);
+    homeMap?.fitBounds(circle.getBounds(), { padding: [20, 20] });
+    document.querySelectorAll<HTMLElement>("[data-radius]").forEach((b) => b.setAttribute("aria-pressed", String(Number(b.dataset.radius) === r)));
+  };
+  setTimeout(() => {
+    homeMap?.invalidateSize();
+    homeMap?.fitBounds(circle.getBounds(), { padding: [20, 20] });
+  }, 60);
+}
+let homeCircle: ((r: number) => void) | null = null;
+
+async function saveHome(area: HomeArea | null): Promise<void> {
+  if (area && !inKrsk(area)) {
+    toast("Точка за пределами Красноярска");
+    return;
+  }
+  const nu = await act(() => S.backend.setHomeArea(area), area ? "Готово: сообщим о новых обращениях рядом с домом" : "Уведомления о районе отключены");
+  if (nu === FAIL) return;
+  S.auth = { kind: "user", user: nu };
+  closeModal();
+  homeMap?.remove();
+  homeMap = null;
+  drawMarkers();
+  refresh();
+}
+
+// ---------- command palette ----------
+
+function paletteItems(q: string): PaletteItem[] {
+  const n = q.toLowerCase().replace(/ё/g, "е");
+  const has = (t: string) => !n || t.toLowerCase().replace(/ё/g, "е").includes(n);
+  const actions: PaletteItem[] = [
+    { group: "Действия", icon: "add_a_photo", title: "Сообщить о проблеме", sub: "Фото, место и категория — меньше минуты", run: () => go("create") },
+    { group: "Действия", icon: "format_list_bulleted", title: "Все обращения списком", run: () => go("list") },
+    { group: "Действия", icon: "local_fire_department", title: S.heat ? "Выключить тепловую карту" : "Тепловая карта проблем", run: () => void runClick("heat") },
+    { group: "Действия", icon: "near_me", title: "Обращения рядом со мной", sub: "Сортировка по расстоянию", run: () => void setSort("near", true) },
+    { group: "Действия", icon: "partly_cloudy_day", title: "Погода и качество воздуха", run: () => go("weather") },
+    { group: "Действия", icon: "bar_chart", title: "Статистика и рейтинг районов", run: () => go("stats") },
+    { group: "Действия", icon: "notifications", title: "Уведомления", run: () => go("notif") },
+    { group: "Действия", icon: "home_pin", title: "Мой район: уведомления о проблемах рядом с домом", run: () => (user() ? homeModal() : openLogin("Войдите, чтобы указать свой район.")) },
+    { group: "Действия", icon: "dark_mode", title: "Сменить тему оформления", run: () => void runClick("theme") },
+  ];
+  const out = actions.filter((a) => has(a.title) || has(a.sub ?? "")).slice(0, n ? 4 : 9);
+  if (n) {
+    const cs = S.complaints
+      .filter((c) => !["duplicate", "rejected"].includes(c.status) && (has(c.title) || has(c.address) || has(c.description) || has(cat(c.category).name)))
+      .slice(0, 6)
+      .map<PaletteItem>((c) => ({ group: "Обращения", icon: cat(c.category).icon, title: c.title, sub: `${c.address} · ${STATUSES[c.status].name}`, run: () => openDetail(c.id) }));
+    out.push(...cs);
+  }
+  return out;
+}
+
+async function paletteSearch(q: string): Promise<PaletteItem[]> {
+  const places = await searchPlaces(q);
+  return places.flatMap((p) => [
+    { group: "Адреса", icon: "location_on", title: p.title, sub: p.subtitle || "Показать на карте", run: () => flyTo(p) },
+  ]).concat(places.length ? [{ group: "Адреса", icon: "add_location_alt", title: `Сообщить о проблеме: ${places[0]?.title ?? ""}`, sub: "Метка будет стоять по этому адресу", run: () => reportAt(places[0] as LatLng) }] : []);
+}
+
+function flyTo(p: LatLng): void {
+  if (!isDesktop() && S.view !== "map") go("map");
+  setTimeout(() => {
+    mainMap?.map.flyTo([p.lat, p.lng], 17, { duration: 0.8 });
+    S.selected = null;
+    renderHud();
+  }, 80);
+}
+
+function reportAt(p: LatLng): void {
+  if (!user()) {
+    openLogin("Чтобы сообщить о проблеме, войдите — так вы получите уведомления о статусе.", { go: "create" });
+    return;
+  }
+  go("create");
+  if (S.draft) {
+    S.draft.lat = p.lat;
+    S.draft.lng = p.lng;
+    void reverseGeocode();
+  }
+}
+
+function showPalette(): void {
+  if (paletteOpen()) return;
+  closeModal();
+  openPalette({ items: paletteItems, search: paletteSearch });
+}
+
+// ---------- location and sorting ----------
+
+function locateMe(): Promise<LatLng | null> {
+  return new Promise((resolve) => {
+    if (!navigator.geolocation) return resolve(null);
+    navigator.geolocation.getCurrentPosition(
+      (p) => {
+        S.origin = { lat: p.coords.latitude, lng: p.coords.longitude };
+        resolve(S.origin);
+      },
+      () => resolve(null),
+      { timeout: 8000, maximumAge: 120_000 },
+    );
+  });
+}
+
+async function setSort(sort: typeof S.filter.sort, openList = false): Promise<void> {
+  S.filter.sort = sort;
+  if (openList && S.view !== "list") go("list");
+  if (sort === "near" && !S.origin) {
+    toast("Определяем ваше местоположение…");
+    if (!(await locateMe())) toast("Не удалось определить местоположение — разрешите доступ к геолокации");
+  }
+  refreshAll();
 }
 
 async function moderate(id: string, status: Status, comment?: string): Promise<void> {
@@ -813,20 +1046,80 @@ async function runClick(action: string, el?: HTMLElement): Promise<void> {
     case "zoomout":
       mainMap?.map.zoomOut();
       break;
-    case "locate":
+    case "locate": {
       if (!navigator.geolocation) {
         toast("Геолокация недоступна на этом устройстве");
         break;
       }
-      navigator.geolocation.getCurrentPosition(
-        (p) => mainMap?.map.setView([p.coords.latitude, p.coords.longitude], 16),
-        () => {
-          toast("Не удалось определить местоположение — показываем район СФУ");
-          mainMap?.map.setView([CAMPUS.lat, CAMPUS.lng], CAMPUS.zoom);
-        },
-        { timeout: 8000 },
+      const p = await locateMe();
+      if (p) {
+        mainMap?.map.setView([p.lat, p.lng], 16);
+        softRefresh();
+      } else {
+        toast("Не удалось определить местоположение — показываем район СФУ");
+        mainMap?.map.setView([CAMPUS.lat, CAMPUS.lng], CAMPUS.zoom);
+      }
+      break;
+    }
+    case "palette":
+      showPalette();
+      break;
+    case "heat":
+      S.heat = !S.heat;
+      ls.set("heat", S.heat);
+      if (S.heat) S.selected = null;
+      drawMarkers();
+      renderHud();
+      if (S.heat && !isDesktop() && S.view !== "map") go("map");
+      break;
+    case "lightbox": {
+      const c = findComplaint(S.detailId);
+      if (!c) break;
+      const ph = galleryPhotos(c).filter((x) => x.url);
+      openLightbox(
+        ph.map((x, i) => ({ url: x.url as string, alt: `Фото ${i + 1}: ${c.title}` })),
+        Number(ds.idx ?? 0),
       );
       break;
+    }
+    case "commentlogin":
+      openLogin(NEEDS_LOGIN.comment, { act: "comment", id });
+      break;
+    case "delcomment": {
+      const cid = S.detailId;
+      if ((await act(() => S.backend.deleteComment(id), isModerator() && !S.comments.list?.find((m) => m.id === id)?.mine ? "Комментарий скрыт" : "Комментарий удалён")) === FAIL || !cid) break;
+      await Promise.all([loadComments(cid), loadDetail(cid)]);
+      softRefresh();
+      break;
+    }
+    case "applysuggest":
+      if (S.draft) {
+        S.draft.category = id;
+        toast(`Категория: ${cat(id).name}`);
+        const box = $("#suggest-box");
+        if (box) box.innerHTML = "";
+      }
+      break;
+    case "voice":
+      toggleVoice();
+      break;
+    case "homearea":
+      homeModal();
+      break;
+    case "savehome":
+      await saveHome(homeDraft);
+      break;
+    case "clearhome":
+      await saveHome(null);
+      break;
+    case "install": {
+      const ev = S.installPrompt;
+      if (!ev) break;
+      S.installPrompt = null;
+      await ev.prompt().catch(() => undefined);
+      refresh();
+      break;
+    }
     case "resetfilters":
       S.filter = { ...emptyFilter(), status: "all" };
       S.search = "";
@@ -1028,7 +1321,7 @@ async function runClick(action: string, el?: HTMLElement): Promise<void> {
 
 async function onClick(e: MouseEvent): Promise<void> {
   const el = (e.target as HTMLElement).closest<HTMLElement>(
-    "[data-go],[data-act],[data-open],[data-open-admin],[data-status],[data-cat],[data-mine],[data-pickcat],[data-rmphoto],[data-mod],[data-notif],[data-photo],[data-onb],[data-admtab]",
+    "[data-go],[data-act],[data-open],[data-open-admin],[data-status],[data-cat],[data-mine],[data-pickcat],[data-rmphoto],[data-mod],[data-notif],[data-photo],[data-onb],[data-admtab],[data-sort],[data-radius]",
   );
   if (!el || (el as HTMLButtonElement).disabled) return;
   const ds = el.dataset;
@@ -1068,6 +1361,14 @@ async function onClick(e: MouseEvent): Promise<void> {
     if (s.has(ds.cat)) s.delete(ds.cat);
     else s.add(ds.cat);
     refreshAll();
+    return;
+  }
+  if (ds.sort) {
+    void setSort(ds.sort as typeof S.filter.sort);
+    return;
+  }
+  if (ds.radius) {
+    homeCircle?.(Number(ds.radius));
     return;
   }
   if (ds.pickcat && S.draft) {
@@ -1119,10 +1420,71 @@ async function onClick(e: MouseEvent): Promise<void> {
 // ---------- weather, theme ----------
 
 async function updateWeather(): Promise<void> {
-  const w = await fetchWeather();
+  const [w, a] = await Promise.all([fetchWeather(), fetchAir()]);
   if (w) S.weather = w;
+  else if (S.weather) S.weather.live = false;
+  if (a) S.air = a;
   renderHud();
   if (S.view === "weather") refresh();
+}
+
+// ---------- voice input (smart create) ----------
+
+interface Recognition {
+  lang: string;
+  interimResults: boolean;
+  continuous: boolean;
+  onresult: ((e: { resultIndex: number; results: ArrayLike<ArrayLike<{ transcript: string }> & { isFinal: boolean }> }) => void) | null;
+  onend: (() => void) | null;
+  onerror: ((e: { error: string }) => void) | null;
+  start(): void;
+  stop(): void;
+}
+let recognition: Recognition | null = null;
+
+function toggleVoice(): void {
+  if (recognition) {
+    recognition.stop();
+    return;
+  }
+  const d = S.draft;
+  if (!d || !speechAvailable()) {
+    toast("Голосовой ввод не поддерживается этим браузером");
+    return;
+  }
+  const W = window as unknown as { SpeechRecognition?: new () => Recognition; webkitSpeechRecognition?: new () => Recognition };
+  const Ctor = W.SpeechRecognition ?? W.webkitSpeechRecognition;
+  if (!Ctor) return;
+  const r = new Ctor();
+  r.lang = "ru-RU";
+  r.interimResults = true;
+  r.continuous = false;
+  const base = d.description.trim();
+  r.onresult = (e) => {
+    let text = "";
+    for (let i = 0; i < e.results.length; i++) text += e.results[i]?.[0]?.transcript ?? "";
+    d.description = ((base ? base + " " : "") + text.trim()).slice(0, 500);
+    const ta = $<HTMLTextAreaElement>("#f-desc");
+    if (ta) ta.value = d.description;
+    setText("#desc-count", `${d.description.length} / 500`);
+    const box = $("#suggest-box");
+    if (box) box.innerHTML = suggestionHtml();
+  };
+  r.onerror = (e) => {
+    if (e.error === "not-allowed") toast("Разрешите доступ к микрофону, чтобы диктовать");
+    else if (e.error !== "aborted" && e.error !== "no-speech") toast("Не удалось распознать речь");
+  };
+  r.onend = () => {
+    recognition = null;
+    wizard.listening = false;
+    $('[data-act="voice"]')?.classList.remove("on");
+    $('[data-act="voice"]')?.setAttribute("aria-pressed", "false");
+  };
+  recognition = r;
+  wizard.listening = true;
+  $('[data-act="voice"]')?.classList.add("on");
+  $('[data-act="voice"]')?.setAttribute("aria-pressed", "true");
+  r.start();
 }
 
 function applyTheme(): void {
@@ -1148,7 +1510,10 @@ const events = {
   },
   onComplaintChanged(id: string) {
     refreshFeedSoon();
-    if (S.view === "detail" && S.detailId === id) void loadDetail(id);
+    if (S.view === "detail" && S.detailId === id) {
+      void loadDetail(id);
+      void loadComments(id);
+    }
   },
 };
 
@@ -1156,6 +1521,7 @@ export async function start(backend: Backend): Promise<void> {
   S.backend = backend;
   applyTheme();
   S.weather = cachedWeather();
+  S.air = cachedAir();
   let route = parseHash(location.hash);
   // A reload never resumes the wizard or the appeal screen: like the prototype, the app starts on the map.
   if (route.view === "create") route = { ...route, view: "map" };
@@ -1177,7 +1543,7 @@ export async function start(backend: Backend): Promise<void> {
     },
   });
   // Debug / e2e hook (the prototype exposed the same object).
-  (window as unknown as { KGP: unknown }).KGP = { S, go, openDetail, render, onbStep, openLogin, closeOverlay, map: () => mainMap?.map, placeMap: () => placeMap, renderHud, drawMarkers, AppError, appealText, markdown };
+  (window as unknown as { KGP: unknown }).KGP = { S, go, openDetail, render, onbStep, openLogin, closeOverlay, map: () => mainMap?.map, placeMap: () => placeMap, homeMap: () => homeMap, renderHud, drawMarkers, AppError, appealText, markdown, showPalette };
   render();
   void updateWeather();
 
@@ -1187,10 +1553,32 @@ export async function start(backend: Backend): Promise<void> {
     resizeT = setTimeout(refresh, 150);
   });
   addEventListener("keydown", (e) => {
+    const typing = /^(INPUT|TEXTAREA|SELECT)$/.test((e.target as HTMLElement)?.tagName ?? "");
+    if ((e.key === "k" || e.key === "л" || e.key === "K" || e.key === "Л") && (e.ctrlKey || e.metaKey)) {
+      e.preventDefault();
+      if (!overlayOpen()) showPalette();
+      return;
+    }
+    if (e.key === "/" && !typing && !overlayOpen() && !modalOpen()) {
+      e.preventDefault();
+      showPalette();
+      return;
+    }
     if (e.key !== "Escape") return;
-    if (modalOpen()) closeModal();
+    if (lightboxOpen()) closeLightbox();
+    else if (paletteOpen()) closePalette();
+    else if (modalOpen()) closeModal();
     else if (S.selected) void runClick("closesheet");
     else if (S.view !== "map" && !overlayOpen()) back();
+  });
+  addEventListener("beforeinstallprompt", (e) => {
+    e.preventDefault();
+    S.installPrompt = e as Event & { prompt(): Promise<void> };
+    if (S.view === "profile") refresh();
+  });
+  addEventListener("appinstalled", () => {
+    S.installPrompt = null;
+    toast("Приложение установлено");
   });
   addEventListener("popstate", () => applyRoute(parseHash(location.hash), true));
   addEventListener("online", () => {
@@ -1250,6 +1638,18 @@ export async function start(backend: Backend): Promise<void> {
   setInterval(() => {
     if (document.visibilityState === "visible" && user()) void loadNotifications();
   }, 120_000);
+  // Live data: the shared feed every minute (server mode), weather and air quality every 10 minutes.
+  setInterval(() => {
+    if (document.visibilityState !== "visible" || S.backend.mode !== "supabase" || !navigator.onLine) return;
+    void loadFeed().then(softRefresh);
+  }, 60_000);
+  setInterval(() => {
+    if (document.visibilityState === "visible") void updateWeather();
+  }, 600_000);
+  document.addEventListener("visibilitychange", () => {
+    const age = Date.now() - (S.weather?.data._fetchedAt ?? 0);
+    if (document.visibilityState === "visible" && age > 600_000) void updateWeather();
+  });
 
 }
 let resizeT: ReturnType<typeof setTimeout> | undefined;

@@ -1,5 +1,6 @@
 import { STATUSES } from "../domain/constants";
-import { esc, fmtDate, ico } from "../domain/format";
+import { distM, esc, fmtDate, ico } from "../domain/format";
+import { fmtDistance } from "../domain/smart";
 import type { Complaint } from "../domain/types";
 import { cat, S } from "../state/store";
 
@@ -26,14 +27,15 @@ export function photoHtml(c: Complaint, i = 0): string {
   return illuHtml(c);
 }
 
-export function itemHtml(c: Complaint): string {
+export function itemHtml(c: Complaint, i = 0): string {
   const k = cat(c.category);
-  return `<button class="c-item" data-open="${esc(c.id)}">
+  const dist = S.origin ? `<span class="dist">${ico("near_me")} ${fmtDistance(distM(c, S.origin))}</span>` : "";
+  return `<button class="c-item" data-open="${esc(c.id)}" style="animation-delay:${Math.min(i, 12) * 25}ms">
     <div class="thumb">${photoHtml(c)}</div>
     <div class="c-body">
       <span class="row wrap" style="gap:6px">${statusChip(c.status, 'style="align-self:flex-start"')}${c.demo ? `<span class="demo-tag">${ico("science")}пример</span>` : ""}</span>
       <span class="c-title">${esc(c.title)}</span>
-      <span class="c-meta"><span>${ico(k.icon)} ${esc(k.name)}</span><span>${ico("thumb_up")} <span class="num">${c.supports}</span></span></span>
+      <span class="c-meta"><span>${ico(k.icon)} ${esc(k.name)}</span><span>${ico("thumb_up")} <span class="num">${c.supports}</span></span>${c.comments ? `<span>${ico("forum")} <span class="num">${c.comments}</span></span>` : ""}${dist}</span>
       <span class="c-meta"><span>${ico("place")} ${esc(c.address)}</span><span>${fmtDate(c.createdAt)}</span></span>
     </div>
   </button>`;
@@ -63,6 +65,11 @@ export function navHtml(rail: boolean): string {
         : `<button class="nav-item" data-go="${v}" ${curN === v ? 'aria-current="page"' : ""}><span class="pill">${ico(i)}</span>${rail && v === "list" ? "Обращения" : t}${v === "notif" && unread ? `<span class="nav-badge num" aria-label="${unread} непрочитанных">${unread}</span>` : ""}</button>`,
     )
     .join("");
+}
+
+/** Placeholder cards while the feed loads. */
+export function skeletonList(n = 4): string {
+  return `<div class="c-list" role="status" aria-label="Загружаем обращения">${Array.from({ length: n }, () => `<div class="sk-item"><div class="sk img"></div><div><div class="sk l" style="width:40%"></div><div class="sk l" style="width:90%"></div><div class="sk l" style="width:70%"></div></div></div>`).join("")}</div>`;
 }
 
 /** Banner on top of a screen when data comes from the device cache. */

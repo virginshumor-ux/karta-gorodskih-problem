@@ -2,8 +2,10 @@ import type {
   AdminUser,
   AppNotification,
   Category,
+  Comment,
   Complaint,
   Duplicate,
+  HomeArea,
   Report,
   Role,
   Stats,
@@ -72,6 +74,11 @@ export interface Backend {
   report(id: string, reason: string): Promise<void>;
   notifications(): Promise<AppNotification[]>;
   markRead(ids?: string[]): Promise<void>;
+  comments(complaintId: string): Promise<Comment[]>;
+  addComment(complaintId: string, text: string): Promise<void>;
+  deleteComment(id: string): Promise<void>;
+  /** Ф-11+: alerts about new complaints within the radius of the user's home (null clears it). */
+  setHomeArea(area: HomeArea | null): Promise<User>;
 
   // moderation and administration (Ф-16 … Ф-22)
   moderateStatus(id: string, status: Status, comment?: string): Promise<void>;

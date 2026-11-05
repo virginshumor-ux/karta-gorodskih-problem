@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { iceRisk, wmo, type WeatherData } from "../../src/domain/weather";
+import { aqiLevel, cityWarnings, iceRisk, windDir, wmo, type AirData, type WeatherData } from "../../src/domain/weather";
 
 function w(t: number, code: number, precipitation = 0, hourly: number[] = [t]): WeatherData {
   return {
@@ -29,4 +29,38 @@ describe("wmo", () => {
     expect(wmo(75).text).toBe("Сильный снег");
   });
   it("unknown code falls back to a dash", () => expect(wmo(12345)).toEqual({ text: "—", icon: "cloud" }));
+});
+
+describe("aqiLevel", () => {
+  it("follows the European AQI bands", () => {
+    expect(aqiLevel(10).key).toBe("good");
+    expect(aqiLevel(35).key).toBe("fair");
+    expect(aqiLevel(55).key).toBe("moderate");
+    expect(aqiLevel(75).key).toBe("poor");
+    expect(aqiLevel(95).key).toBe("verypoor");
+    expect(aqiLevel(140).key).toBe("extreme");
+  });
+  it("warns about the «black sky» regime when the air is poor", () => expect(aqiLevel(75).advice).toMatch(/чёрного неба/));
+});
+
+describe("windDir", () => {
+  it("maps degrees to 8 compass points", () => {
+    expect(windDir(0)).toBe("С");
+    expect(windDir(92)).toBe("В");
+    expect(windDir(225)).toBe("ЮЗ");
+    expect(windDir(359)).toBe("С");
+    expect(windDir(undefined)).toBe("");
+  });
+});
+
+describe("cityWarnings", () => {
+  const air = (eaqi: number): AirData => ({ current: { time: "2026-11-02T08:00", european_aqi: eaqi, pm10: 10, pm2_5: 5 } });
+  it("calm weather and clean air — no warnings", () => expect(cityWarnings(w(-5, 0), air(15))).toEqual([]));
+  it("collects ice, strong gusts, frost and smog", () => {
+    const x = w(-27, 66);
+    x.current.wind_gusts_10m = 18;
+    const icons = cityWarnings(x, air(85)).map((c) => c.icon);
+    expect(icons).toEqual(["warning", "air", "ac_unit", "masks"]);
+  });
+  it("heat warning in summer", () => expect(cityWarnings(w(32, 0)).map((c) => c.icon)).toEqual(["sunny"]));
 });

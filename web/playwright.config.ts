@@ -26,7 +26,7 @@ export default defineConfig({
       : []),
   ],
   projects: [
-    { name: "local-mobile", testMatch: /local\.spec\.ts/, use: { ...devices["Pixel 7"], channel: CI ? undefined : "msedge", baseURL: "http://127.0.0.1:4173/" } },
+    { name: "local-mobile", testMatch: /(local|features)\.spec\.ts/, use: { ...devices["Pixel 7"], channel: CI ? undefined : "msedge", baseURL: "http://127.0.0.1:4173/" } },
     { name: "tiles", testMatch: /tiles\.spec\.ts/, use: { viewport: { width: 390, height: 844 }, baseURL: "http://127.0.0.1:4173/" } },
     { name: "desktop", testMatch: /desktop\.spec\.ts/, use: { viewport: { width: 1440, height: 900 }, baseURL: "http://127.0.0.1:4173/" } },
     ...(withServer ? [{ name: "server", testMatch: /server\.spec\.ts/, use: { viewport: { width: 390, height: 844 }, baseURL: "http://127.0.0.1:4174/" } }] : []),

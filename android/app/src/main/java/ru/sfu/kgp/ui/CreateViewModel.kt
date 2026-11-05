@@ -22,6 +22,7 @@ import ru.sfu.kgp.domain.Complaint
 import ru.sfu.kgp.domain.Duplicate
 import ru.sfu.kgp.domain.Krsk
 import ru.sfu.kgp.domain.NewComplaint
+import ru.sfu.kgp.domain.suggestCategory
 import ru.sfu.kgp.domain.distM
 import ru.sfu.kgp.domain.toAppException
 import java.io.File
@@ -42,6 +43,8 @@ data class WizardDraft(
     val description: String = "",
     val createdId: String? = null,
     val savedOffline: Boolean = false,
+    /** The place was taken from the photo's GPS tag. */
+    val fromExif: Boolean = false,
 )
 
 data class WizardUi(
@@ -58,6 +61,9 @@ data class WizardUi(
         3 -> draft.title.trim().length >= 5
         else -> !busy
     }
+
+    /** Category hint on the description step when the text clearly points to another category. */
+    val suggestion: String? get() = suggestCategory("${draft.title} ${draft.description}")?.takeIf { it != draft.category }
 }
 
 class CreateViewModel(
@@ -103,6 +109,10 @@ class CreateViewModel(
 
     fun addPhoto(uri: Uri, onError: (String) -> Unit) = viewModelScope.launch {
         if (_ui.value.draft.photos.size >= 3) return@launch
+        if (_ui.value.draft.lat == null) c.photos.gps(uri)?.takeIf { (lat, lng) -> Krsk.inCity(lat, lng) }?.let { (lat, lng) ->
+            setLocation(lat, lng)
+            edit { it.copy(fromExif = true) }
+        }
         runCatching { c.photos.compress(uri) }
             .onSuccess { f -> edit { it.copy(photos = (it.photos + f.absolutePath).take(3)) } }
             .onFailure { onError("Не удалось прочитать файл. Выберите фото в формате JPEG, PNG или HEIC.") }
@@ -139,6 +149,7 @@ class CreateViewModel(
     // ---------- steps 3–4 ----------
 
     fun setCategory(id: String) = edit { it.copy(category = id) }
+    fun applySuggestion() = _ui.value.suggestion?.let(::setCategory)
     fun setTitle(t: String) = edit { it.copy(title = t.take(80)) }
     fun setDescription(t: String) = edit { it.copy(description = t.take(500)) }
 

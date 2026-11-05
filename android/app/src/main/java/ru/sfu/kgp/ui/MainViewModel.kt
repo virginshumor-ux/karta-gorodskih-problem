@@ -4,6 +4,8 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -14,22 +16,27 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import ru.sfu.kgp.AppContainer
 import ru.sfu.kgp.BuildConfig
+import ru.sfu.kgp.data.AirState
 import ru.sfu.kgp.data.DemoBackend
 import ru.sfu.kgp.data.ThemeMode
 import ru.sfu.kgp.data.WeatherState
 import ru.sfu.kgp.domain.AppNotification
 import ru.sfu.kgp.domain.AuthState
 import ru.sfu.kgp.domain.Category
+import ru.sfu.kgp.domain.Comment
 import ru.sfu.kgp.domain.Complaint
 import ru.sfu.kgp.domain.DEFAULT_CATS
 import ru.sfu.kgp.domain.Filter
+import ru.sfu.kgp.domain.HomeArea
 import ru.sfu.kgp.domain.Krsk
 import ru.sfu.kgp.domain.Period
+import ru.sfu.kgp.domain.Sort
 import ru.sfu.kgp.domain.Stats
 import ru.sfu.kgp.domain.Status
 import ru.sfu.kgp.domain.StatusFilter
 import ru.sfu.kgp.domain.User
 import ru.sfu.kgp.domain.filterComplaints
+import ru.sfu.kgp.domain.sortComplaints
 import ru.sfu.kgp.domain.toAppException
 import ru.sfu.kgp.map.MapMode
 
@@ -51,7 +58,13 @@ data class UiState(
     val detail: Complaint? = null,
     val notifications: List<AppNotification> = emptyList(),
     val weather: WeatherState? = null,
+    val air: AirState? = null,
     val stats: Stats? = null,
+    /** Comments of the open complaint: (complaint id, list or null while loading). */
+    val comments: Pair<String, List<Comment>?>? = null,
+    /** Last known position of the user (sorting "nearest first", distances in the list). */
+    val origin: Pair<Double, Double>? = null,
+    val heatmap: Boolean = false,
     val mapMode: MapMode = MapMode.PENDING,
     val pendingDrafts: Int = 0,
     val theme: ThemeMode = ThemeMode.SYSTEM,
@@ -66,7 +79,8 @@ data class UiState(
     val unread: Int get() = notifications.count { !it.read }
     fun cat(id: String): Category = cats.firstOrNull { it.id == id } ?: DEFAULT_CATS.firstOrNull { it.id == id } ?: DEFAULT_CATS.last()
     fun find(id: String?): Complaint? = if (id == null) null else if (detail?.id == id) detail else complaints.firstOrNull { it.id == id }
-    val visible: List<Complaint> get() = filterComplaints(complaints, filter, search, moderator, { cat(it).name })
+    val visible: List<Complaint> get() = sortComplaints(filterComplaints(complaints, filter, search, moderator, { cat(it).name }), filter.sort, origin)
+    fun commentsOf(id: String): List<Comment>? = comments?.takeIf { it.first == id }?.second
 }
 
 sealed interface NavEvent {
@@ -78,7 +92,7 @@ sealed interface NavEvent {
 }
 
 class MainViewModel(private val c: AppContainer) : ViewModel() {
-    private val _state = MutableStateFlow(UiState(theme = c.settings.theme, isDemo = c.backend.isDemo))
+    private val _state = MutableStateFlow(UiState(theme = c.settings.theme, isDemo = c.backend.isDemo, heatmap = c.settings.heatmap))
     val state: StateFlow<UiState> = _state.asStateFlow()
     private val _toasts = MutableSharedFlow<String>(extraBufferCapacity = 8, onBufferOverflow = BufferOverflow.DROP_OLDEST)
     val toasts: SharedFlow<String> = _toasts
@@ -89,7 +103,9 @@ class MainViewModel(private val c: AppContainer) : ViewModel() {
     private val backend get() = c.repository.backend
 
     init {
-        _state.update { it.copy(weather = runCatching { c.weather.cached() }.getOrNull(), onboardingStep = if (c.settings.onboarded) null else 0) }
+        _state.update {
+            it.copy(weather = runCatching { c.weather.cached() }.getOrNull(), air = c.weather.cachedAir(), onboardingStep = if (c.settings.onboarded) null else 0)
+        }
         viewModelScope.launch {
             val auth = runCatching { backend.init() }.getOrElse { e -> toast(e.toAppException().message); AuthState.Guest }
             _state.update { it.copy(auth = auth, profileForm = auth is AuthState.NeedsProfile) }
@@ -99,7 +115,20 @@ class MainViewModel(private val c: AppContainer) : ViewModel() {
             listenRealtime()
             flushDrafts()
         }
-        viewModelScope.launch { c.weather.fetch()?.let { w -> _state.update { it.copy(weather = w) } } }
+        // Live weather and air quality: refreshed every 10 minutes while the app is open.
+        viewModelScope.launch {
+            while (isActive) {
+                updateWeather()
+                delay(10 * 60_000L)
+            }
+        }
+    }
+
+    private suspend fun updateWeather(): Boolean {
+        val w = c.weather.fetch()
+        val a = c.weather.fetchAir()
+        _state.update { s -> s.copy(weather = w ?: s.weather?.copy(live = false), air = a ?: s.air) }
+        return w != null
     }
 
     fun toast(msg: String?) {
@@ -174,7 +203,7 @@ class MainViewModel(private val c: AppContainer) : ViewModel() {
 
     fun refreshWeather() = viewModelScope.launch {
         toast("Обновляем погоду…")
-        c.weather.fetch()?.let { w -> _state.update { it.copy(weather = w) } } ?: toast("Нет сети — показаны сохранённые данные")
+        if (!updateWeather()) toast("Нет сети — показаны сохранённые данные")
     }
 
     fun flushDrafts() = viewModelScope.launch {
@@ -196,6 +225,16 @@ class MainViewModel(private val c: AppContainer) : ViewModel() {
     fun resetFilters() = _state.update { it.copy(filter = Filter(status = StatusFilter.ALL), search = "") }
     fun select(id: String?) = _state.update { it.copy(selected = id) }
     fun setMapMode(m: MapMode) = _state.update { it.copy(mapMode = m) }
+    fun setOrigin(lat: Double, lng: Double) = _state.update { it.copy(origin = lat to lng) }
+
+    /** "Nearest" needs the position: the screen asks for it and calls [setOrigin]; without it the order stays "newest". */
+    fun setSort(s: Sort) = _state.update { it.copy(filter = it.filter.copy(sort = s)) }
+
+    fun toggleHeatmap() {
+        val on = !_state.value.heatmap
+        c.settings.heatmap = on
+        _state.update { it.copy(heatmap = on, selected = if (on) null else it.selected) }
+    }
 
     // ---------- onboarding, auth ----------
 
@@ -305,6 +344,7 @@ class MainViewModel(private val c: AppContainer) : ViewModel() {
         "confirm" to "Войдите, чтобы подтвердить решение.",
         "notfixed" to "Войдите, чтобы отметить, что проблема не решена.",
         "report" to "Войдите, чтобы пожаловаться на обращение.",
+        "comment" to "Войдите, чтобы участвовать в обсуждении.",
     )
 
     /** Returns false when the user must sign in first (the action continues automatically afterwards). */
@@ -332,8 +372,40 @@ class MainViewModel(private val c: AppContainer) : ViewModel() {
                 "report" -> if (arg != null) act("Жалоба отправлена модератору. Спасибо!") { backend.report(id, arg) }
                 "marksent" -> act("Статус: передано в организацию") { backend.markSent(id) }?.let { reload(id); _nav.tryEmit(NavEvent.Back) }
                 "after" -> if (arg != null) act("Фото «после» отправлено модератору. Жители смогут подтвердить решение.") { backend.addAfterPhoto(id, arg) }?.let { reload(id) }
+                "comment" -> _nav.tryEmit(NavEvent.Detail(id))
             }
         }
+    }
+
+    // ---------- discussion ----------
+
+    fun loadComments(id: String) = viewModelScope.launch {
+        if (_state.value.comments?.first != id) _state.update { it.copy(comments = id to null) }
+        runCatching { backend.comments(id) }.onSuccess { list -> _state.update { s -> if (s.comments?.first == id) s.copy(comments = id to list) else s } }
+    }
+
+    /** Returns true when the comment was accepted (the screen then clears the field). */
+    suspend fun sendComment(id: String, text: String): Boolean {
+        if (text.isBlank()) return false
+        act { backend.addComment(id, text.trim()) } ?: return false
+        loadComments(id).join()
+        reload(id)
+        return true
+    }
+
+    fun deleteComment(complaintId: String, commentId: String) = viewModelScope.launch {
+        val mine = _state.value.commentsOf(complaintId)?.firstOrNull { it.id == commentId }?.mine == true
+        act(if (mine) "Комментарий удалён" else "Комментарий скрыт") { backend.deleteComment(commentId) } ?: return@launch
+        loadComments(complaintId).join()
+        reload(complaintId)
+    }
+
+    // ---------- "my area" ----------
+
+    fun saveHome(area: HomeArea?) = viewModelScope.launch {
+        if (area != null && !Krsk.inCity(area.lat, area.lng)) return@launch toast("Точка за пределами Красноярска")
+        act(if (area != null) "Готово: сообщим о новых обращениях рядом с домом" else "Уведомления о районе отключены") { backend.setHomeArea(area) }
+            ?.let { nu -> _state.update { it.copy(auth = AuthState.SignedIn(nu)) } }
     }
 
     fun supportDuplicate(id: String) = viewModelScope.launch {

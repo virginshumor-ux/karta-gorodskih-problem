@@ -19,7 +19,7 @@ import ru.sfu.kgp.R
 import ru.sfu.kgp.data.ThemeMode
 import ru.sfu.kgp.domain.Status
 
-/** Design tokens of the prototype (docs/handoff/prototype/src/style.css), light and dark. */
+/** Design tokens v2 — the same as web/src/styles/style.css (:root and the dark theme). */
 @Immutable
 data class KgpColors(
     val bg: Color, val surface: Color, val surface2: Color, val surface3: Color,
@@ -34,23 +34,23 @@ data class KgpColors(
 private fun c(hex: Long) = Color(0xFF000000 or hex)
 
 val LightKgp = KgpColors(
-    bg = c(0xf3f6f6), surface = c(0xffffff), surface2 = c(0xe9efef), surface3 = c(0xdde6e6),
-    fg = c(0x10201f), fg2 = c(0x4a5b5a), fg3 = c(0x7a8a89), line = c(0xd3dddc),
-    primary = c(0x0b5d66), primary2 = c(0x0f7a85), onPrimary = c(0xffffff), primarySoft = c(0xd6ecee),
-    accent = c(0xe8611a), onAccent = c(0xffffff), accentSoft = c(0xfde4d4),
-    ok = c(0x2e7d4f), okSoft = c(0xdcefe3), warn = c(0xb26a00), warnSoft = c(0xfbedd0),
-    bad = c(0xb3261e), badSoft = c(0xf9dedc), info = c(0x2f5fa8), infoSoft = c(0xdde7f7), mutedSoft = c(0xe6e9ec),
-    scrim = Color(0x73081818), dark = false,
+    bg = c(0xf2f5f6), surface = c(0xffffff), surface2 = c(0xeef3f4), surface3 = c(0xe1e9eb),
+    fg = c(0x0e1c1d), fg2 = c(0x46585a), fg3 = c(0x66787a), line = c(0xdde5e6),
+    primary = c(0x0a6670), primary2 = c(0x0f8792), onPrimary = c(0xffffff), primarySoft = c(0xdcf0f1),
+    accent = c(0xf0611c), onAccent = c(0xffffff), accentSoft = c(0xfeebdd),
+    ok = c(0x23804c), okSoft = c(0xdcf2e4), warn = c(0xa66200), warnSoft = c(0xfdf0d3),
+    bad = c(0xb3261e), badSoft = c(0xfbe2df), info = c(0x285ca8), infoSoft = c(0xe1eafa), mutedSoft = c(0xe7ecee),
+    scrim = Color(0x6B061416), dark = false,
 )
 
 val DarkKgp = KgpColors(
-    bg = c(0x0d1716), surface = c(0x142120), surface2 = c(0x1b2b2a), surface3 = c(0x243736),
-    fg = c(0xe4efee), fg2 = c(0xa9bbba), fg3 = c(0x7f9291), line = c(0x2b3f3e),
-    primary = c(0x6fd0da), primary2 = c(0x8fdde5), onPrimary = c(0x00363b), primarySoft = c(0x16403f),
-    accent = c(0xff8a4c), onAccent = c(0x3a1300), accentSoft = c(0x4a2412),
-    ok = c(0x7fd3a0), okSoft = c(0x173826), warn = c(0xf2bd5c), warnSoft = c(0x3d2c08),
-    bad = c(0xffb4ab), badSoft = c(0x4c1713), info = c(0xa9c7ff), infoSoft = c(0x1b2c4a), mutedSoft = c(0x263231),
-    scrim = Color(0x8C000000), dark = true,
+    bg = c(0x0a1213), surface = c(0x121c1e), surface2 = c(0x182527), surface3 = c(0x213235),
+    fg = c(0xe6f0f0), fg2 = c(0xa9babb), fg3 = c(0x8b9d9e), line = c(0x223032),
+    primary = c(0x64d2da), primary2 = c(0x8be0e6), onPrimary = c(0x00363b), primarySoft = c(0x143e40),
+    accent = c(0xff8a4c), onAccent = c(0x3a1300), accentSoft = c(0x46230f),
+    ok = c(0x7fd3a0), okSoft = c(0x153523), warn = c(0xf2bd5c), warnSoft = c(0x3a2a08),
+    bad = c(0xffb4ab), badSoft = c(0x4a1612), info = c(0xa9c7ff), infoSoft = c(0x182a47), mutedSoft = c(0x223032),
+    scrim = Color(0x99000000), dark = true,
 )
 
 val LocalKgp = staticCompositionLocalOf { LightKgp }

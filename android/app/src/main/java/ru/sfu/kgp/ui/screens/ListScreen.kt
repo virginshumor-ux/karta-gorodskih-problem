@@ -35,9 +35,16 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import ru.sfu.kgp.domain.DISTRICTS
+import android.Manifest
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.ui.platform.LocalContext
 import ru.sfu.kgp.domain.Period
+import ru.sfu.kgp.domain.Sort
 import ru.sfu.kgp.domain.StatusFilter
+import ru.sfu.kgp.domain.distM
 import ru.sfu.kgp.domain.fmtDate
+import ru.sfu.kgp.domain.fmtDistance
 import ru.sfu.kgp.domain.plural
 import ru.sfu.kgp.ui.Banner
 import ru.sfu.kgp.ui.BtnKind
@@ -91,6 +98,20 @@ private fun Select(icon: String, label: String, value: String, options: List<Pai
 @Composable
 fun ListScreen(s: UiState, vm: MainViewModel, onOpen: (String) -> Unit, onMap: () -> Unit) {
     val items = s.visible
+    val context = LocalContext.current
+    val locate = {
+        requestLocation(context) { l -> if (l != null) vm.setOrigin(l.latitude, l.longitude) else vm.toast("Не удалось определить местоположение") }
+    }
+    val permission = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { r ->
+        if (r.values.any { it }) locate() else vm.toast("Без доступа к геолокации обращения сортируются по дате")
+    }
+    val pickSort = { sort: Sort ->
+        vm.setSort(sort)
+        if (sort == Sort.NEAR && s.origin == null) {
+            lastKnownLocation(context)?.let { vm.setOrigin(it.latitude, it.longitude) }
+                ?: permission.launch(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION))
+        }
+    }
     val districts = (DISTRICTS + s.complaints.map { it.district }.filter { it.isNotEmpty() }).distinct().sorted()
     LazyColumn(Modifier.fillMaxSize().background(LocalKgp.current.bg).testTag("list"), contentPadding = ru.sfu.kgp.ui.ScreenPadding) {
         item { TopBar("Обращения", actions = { IconBtn("map", "Показать на карте", onMap) }) }
@@ -118,12 +139,32 @@ fun ListScreen(s: UiState, vm: MainViewModel, onOpen: (String) -> Unit, onMap: (
                 Select("date_range", "Период", s.filter.period.name, Period.entries.map { it.name to it.title }, { vm.setPeriod(Period.valueOf(it)) }, Modifier.weight(1f))
             }
         }
+        item {
+            val k = LocalKgp.current
+            Row(Modifier.padding(horizontal = 16.dp, vertical = 4.dp).clip(RoundedCornerShape(50)).background(k.surface2).padding(3.dp)) {
+                listOf(Sort.NEW to "schedule", Sort.NEAR to "near_me", Sort.POPULAR to "trending_up").forEach { (sort, icon) ->
+                    val on = s.filter.sort == sort
+                    Row(
+                        Modifier.clip(RoundedCornerShape(50)).background(if (on) k.surface else androidx.compose.ui.graphics.Color.Transparent)
+                            .clickable(role = Role.Tab) { pickSort(sort) }.padding(horizontal = 12.dp, vertical = 8.dp).testTag("sort-${sort.name.lowercase()}"),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Sym(icon, size = 17.sp, color = if (on) k.fg else k.fg2)
+                        Text(" ${sort.title}", fontSize = 13.sp, color = if (on) k.fg else k.fg2)
+                    }
+                }
+            }
+        }
         if (s.loading && s.complaints.isEmpty()) {
             item { EmptyState("hourglass_top", "Загружаем обращения…") }
         } else {
             item {
                 Text(
-                    "${items.size} ${plural(items.size, "обращение", "обращения", "обращений")} · сначала новые",
+                    "${items.size} ${plural(items.size, "обращение", "обращения", "обращений")} · " + when (s.filter.sort) {
+                        Sort.NEW -> "сначала новые"
+                        Sort.NEAR -> if (s.origin != null) "сначала ближайшие" else "сначала новые (местоположение неизвестно)"
+                        Sort.POPULAR -> "сначала самые поддержанные"
+                    },
                     fontSize = 13.sp, color = LocalKgp.current.fg2, modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
                 )
             }
@@ -133,7 +174,8 @@ fun ListScreen(s: UiState, vm: MainViewModel, onOpen: (String) -> Unit, onMap: (
                 }
             }
             items(items, key = { it.id }) { c ->
-                Column(Modifier.padding(horizontal = 16.dp, vertical = 5.dp)) { ComplaintItem(c, s.cat(c.category)) { onOpen(c.id) } }
+                val dist = s.origin?.let { (lat, lng) -> fmtDistance(distM(c.lat, c.lng, lat, lng)) }
+                Column(Modifier.padding(horizontal = 16.dp, vertical = 5.dp)) { ComplaintItem(c, s.cat(c.category), dist) { onOpen(c.id) } }
             }
         }
     }

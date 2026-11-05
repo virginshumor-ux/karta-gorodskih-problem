@@ -29,7 +29,7 @@ android {
         minSdk = 26
         targetSdk = 37
         versionCode = (System.getenv("GITHUB_RUN_NUMBER") ?: "1").toInt()
-        versionName = "1.0.0"
+        versionName = "1.1.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
         buildConfigField("String", "SUPABASE_URL", "\"${cfg("KGP_SUPABASE_URL", "supabase.url")}\"")

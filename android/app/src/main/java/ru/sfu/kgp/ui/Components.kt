@@ -111,17 +111,17 @@ fun KBtn(
 }
 
 @Composable
-fun IconBtn(icon: String, label: String, onClick: () -> Unit, modifier: Modifier = Modifier, tonal: Boolean = false, onDark: Boolean = false) {
+fun IconBtn(icon: String, label: String, onClick: () -> Unit, modifier: Modifier = Modifier, tonal: Boolean = false, onDark: Boolean = false, on: Boolean = false) {
     val k = LocalKgp.current
     Box(
         modifier
             .size(48.dp)
             .clip(CircleShape)
-            .background(if (onDark) Color(0x61000000) else if (tonal) k.surface else Color.Transparent)
+            .background(if (on) k.primary else if (onDark) Color(0x61000000) else if (tonal) k.surface else Color.Transparent)
             .clickable(onClickLabel = label, role = Role.Button, onClick = onClick)
             .semantics { contentDescription = label },
         contentAlignment = Alignment.Center,
-    ) { Sym(icon, color = if (onDark) Color.White else k.fg) }
+    ) { Sym(icon, color = if (on) k.onPrimary else if (onDark) Color.White else k.fg, fill = on) }
 }
 
 @Composable
@@ -237,7 +237,7 @@ fun Thumb(c: Complaint, cat: Category, size: Dp = 76.dp) {
 }
 
 @Composable
-fun ComplaintItem(c: Complaint, cat: Category, onClick: () -> Unit) {
+fun ComplaintItem(c: Complaint, cat: Category, distance: String? = null, onClick: () -> Unit) {
     val k = LocalKgp.current
     Row(
         Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(k.surface).border(1.dp, k.line, RoundedCornerShape(16.dp))
@@ -253,6 +253,16 @@ fun ComplaintItem(c: Complaint, cat: Category, onClick: () -> Unit) {
             Text(c.title, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis, color = k.fg, lineHeight = 19.sp)
             Meta(cat.icon, cat.name, "thumb_up", c.supports.toString())
             Meta("place", c.address, null, fmtDate(c.createdAt))
+            if (c.comments > 0 || distance != null) Row(verticalAlignment = Alignment.CenterVertically) {
+                if (c.comments > 0) {
+                    Sym("forum", size = 15.sp, color = k.fg2)
+                    Text(" ${c.comments}   ", fontSize = 12.sp, color = k.fg2)
+                }
+                if (distance != null) {
+                    Sym("near_me", size = 15.sp, color = k.primary)
+                    Text(" $distance", fontSize = 12.sp, color = k.primary, fontWeight = FontWeight.SemiBold)
+                }
+            }
         }
     }
 }

@@ -150,7 +150,10 @@ export function viewStats(st: Stats | null): string {
 
 // ---------- погода ----------
 
-const sign = (t: number): string => `${t > 0 ? "+" : ""}${Math.round(t)}°`;
+const sign = (t: number): string => {
+  const r = Math.round(t) || 0;
+  return `${r > 0 ? "+" : ""}${r}°`;
+};
 const hhmm = (iso?: string): string => (iso ? iso.slice(11, 16) : "—");
 
 function ago(ts: number): string {

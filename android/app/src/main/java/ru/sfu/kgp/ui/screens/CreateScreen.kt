@@ -152,10 +152,19 @@ fun CreateScreen(
         }
         Column(Modifier.weight(1f).verticalScroll(rememberScrollState(), enabled = d.step != 1)) {
             when (d.step) {
-                0 -> StepPhotos(vm, d.photos, photos, main)
+                0 -> {
+                    StepPhotos(vm, d.photos, photos, main)
+                    if (d.fromExif) Row(
+                        Modifier.padding(horizontal = 16.dp).clip(RoundedCornerShape(12.dp)).background(k.okSoft).padding(horizontal = 12.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Sym("location_on", size = 18.sp, color = k.ok, fill = true)
+                        Text(" Место определено по геометке фото — проверьте на следующем шаге", fontSize = 13.sp, color = k.ok, fontWeight = FontWeight.SemiBold)
+                    }
+                }
                 1 -> StepPlace(vm, ui.draft.lat, ui.draft.lng, ui.draft.address, ui.draft.district, ui.geoHint, ui.geocoding, http)
                 2 -> StepCategory(vm, s, d.category)
-                3 -> StepDescription(vm, d.title, d.description)
+                3 -> StepDescription(vm, d.title, d.description, ui.suggestion?.let { s.cat(it).name })
                 4 -> StepCheck(vm, main, s, ui) { id -> vm.reset(); onOpen(id) }
             }
         }
@@ -299,7 +308,7 @@ private fun StepCategory(vm: CreateViewModel, s: UiState, chosen: String?) {
 }
 
 @Composable
-private fun StepDescription(vm: CreateViewModel, title: String, description: String) {
+private fun StepDescription(vm: CreateViewModel, title: String, description: String, suggestion: String?) {
     val k = LocalKgp.current
     Title("Опишите проблему", "Коротко: что, где именно и почему опасно. Можно пропустить подробности.")
     Column(Modifier.padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -310,6 +319,14 @@ private fun StepDescription(vm: CreateViewModel, title: String, description: Str
         Text("Подробности (необязательно)", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = k.fg2)
         OutlinedTextField(description, vm::setDescription, Modifier.fillMaxWidth().heightIn(min = 120.dp).testTag("description"), placeholder = { Text("Яма около 40 см, после дождя не видна") }, shape = RoundedCornerShape(12.dp), colors = KTextFieldColors())
         Text("${description.length} / 500", fontSize = 12.sp, color = k.fg3, modifier = Modifier.testTag("desc-count"))
+        if (suggestion != null) Row(
+            Modifier.padding(top = 6.dp).fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(k.infoSoft).padding(start = 12.dp, end = 4.dp).testTag("suggest"),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Sym("lightbulb", color = k.info, fill = true)
+            Text("Похоже на категорию «$suggestion»", fontSize = 13.sp, color = k.fg, modifier = Modifier.weight(1f).padding(horizontal = 8.dp))
+            KBtn("Выбрать", { vm.applySuggestion() }, kind = BtnKind.TEXT)
+        }
     }
 }
 

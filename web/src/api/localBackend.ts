@@ -154,7 +154,7 @@ export class LocalBackend implements Backend {
     this.events = events;
     const d = await db();
     let cs = d ? await d.getAll("local_complaints") : [];
-    if (!cs.length || ls.get("local.seedVersion", 0) !== SEED_VERSION) {
+    if (!cs.length || ls.get<number>("local.seedVersion", 0) !== SEED_VERSION) {
       cs = seedComplaints();
       for (const c of cs) await this.put(c);
       for (const n of seedNotifications()) await this.putN(n);

@@ -43,9 +43,11 @@ import ru.sfu.kgp.domain.AppException
 import ru.sfu.kgp.domain.AppNotification
 import ru.sfu.kgp.domain.AuthState
 import ru.sfu.kgp.domain.Category
+import ru.sfu.kgp.domain.Comment
 import ru.sfu.kgp.domain.Complaint
 import ru.sfu.kgp.domain.Duplicate
 import ru.sfu.kgp.domain.HistoryItem
+import ru.sfu.kgp.domain.HomeArea
 import ru.sfu.kgp.domain.NewComplaint
 import ru.sfu.kgp.domain.Photo
 import ru.sfu.kgp.domain.Provider
@@ -81,6 +83,18 @@ private data class FeedRow(
     @SerialName("supported_by_me") val supportedByMe: Boolean,
     @SerialName("confirmed_by_me") val confirmedByMe: Boolean,
     val photos: List<PhotoRow> = emptyList(),
+    @SerialName("comments_count") val comments: Int = 0,
+)
+
+@Serializable
+private data class CommentRow(
+    val id: String,
+    @SerialName("complaint_id") val complaintId: String,
+    val text: String,
+    @SerialName("is_hidden") val isHidden: Boolean,
+    @SerialName("created_at") val createdAt: String,
+    @SerialName("author_nickname") val author: String,
+    @SerialName("is_mine") val isMine: Boolean,
 )
 
 @Serializable
@@ -105,6 +119,11 @@ private data class ProfileJson(
     val complaints: Int = 0,
     val solved: Int = 0,
     val supported: Int = 0,
+    val confirmed: Int = 0,
+    val comments: Int = 0,
+    @SerialName("home_lat") val homeLat: Double? = null,
+    @SerialName("home_lng") val homeLng: Double? = null,
+    @SerialName("home_radius_m") val homeRadius: Int? = null,
 )
 
 @Serializable
@@ -156,7 +175,7 @@ private data class StatsJson(
     @Serializable data class DayN(val day: String, val n: Int)
     @Serializable data class CatN(@SerialName("category_id") val categoryId: String, val n: Int)
     @Serializable data class StatusN(val status: Status, val n: Int)
-    @Serializable data class DistrictN(val district: String, val n: Int)
+    @Serializable data class DistrictN(val district: String, val n: Int, val resolved: Int = 0)
 }
 
 @Serializable
@@ -164,7 +183,7 @@ private data class ConfirmJson(val status: Status, @SerialName("confirms_count")
 
 private const val FEED_COLUMNS =
     "id,category_id,title,description,lat,lng,address,district,status,duplicate_of,supports_count,confirms_count,is_demo," +
-        "created_at,updated_at,author_nickname,is_mine,supported_by_me,confirmed_by_me,photos"
+        "created_at,updated_at,author_nickname,is_mine,supported_by_me,confirmed_by_me,photos,comments_count"
 
 private fun ts(s: String): Long = runCatching { Instant.parse(s).toEpochMilli() }
     .getOrElse { runCatching { java.time.OffsetDateTime.parse(s).toInstant().toEpochMilli() }.getOrDefault(0L) }
@@ -223,7 +242,8 @@ class SupabaseBackend(
         role = when (p.role) { "admin" -> Role.ADMIN; "moderator" -> Role.MODERATOR; else -> Role.USER },
         notifyEnabled = p.notifyEnabled,
         isBlocked = p.isBlocked,
-        stats = UserStats(p.complaints, p.solved, p.supported),
+        stats = UserStats(p.complaints, p.solved, p.supported, p.confirmed, p.comments),
+        home = if (p.homeLat != null && p.homeLng != null && p.homeRadius != null) HomeArea(p.homeLat, p.homeLng, p.homeRadius) else null,
     )
 
     override suspend fun categories(): List<Category> = call {
@@ -268,7 +288,7 @@ class SupabaseBackend(
         createdAt = ts(r.createdAt), updatedAt = ts(r.updatedAt),
         photos = r.photos.map { Photo(it.id, it.path, it.kind, it.approved, signed[it.path]?.first.orEmpty()) },
         author = r.author, mine = r.isMine, supports = r.supports, supportedByMe = r.supportedByMe,
-        confirms = r.confirms, confirmedByMe = r.confirmedByMe,
+        confirms = r.confirms, confirmedByMe = r.confirmedByMe, comments = r.comments,
     )
 
     override suspend fun nearbyDuplicates(lat: Double, lng: Double, category: String): List<Duplicate> = call {
@@ -283,6 +303,7 @@ class SupabaseBackend(
             s.total, s.open, s.resolved, s.supports,
             s.byDay.map { it.day to it.n }, s.byCategory.map { it.categoryId to it.n }, s.byStatus.map { it.status to it.n },
             s.byDistrict.map { it.district to it.n }, s.medianModerationHours, s.medianResolutionDays,
+            s.byDistrict.associate { it.district to it.resolved },
         )
     }
 
@@ -413,6 +434,36 @@ class SupabaseBackend(
         read = false,
         cat = "",
     )
+
+    // ---------- discussion and "my area" ----------
+
+    override suspend fun comments(complaintId: String): List<Comment> = call {
+        client.from("comment_feed").select(Columns.raw("id,complaint_id,text,is_hidden,created_at,author_nickname,is_mine")) {
+            filter { eq("complaint_id", complaintId) }
+            order("created_at", Order.ASCENDING)
+            limit(500)
+        }.decodeList<CommentRow>().map { Comment(it.id, it.complaintId, it.text, it.author, it.isMine, it.isHidden, ts(it.createdAt)) }
+    }
+
+    override suspend fun addComment(complaintId: String, text: String) = call {
+        client.postgrest.rpc("add_comment", buildJsonObject { put("p_complaint", complaintId); put("p_text", text) })
+        Unit
+    }
+
+    override suspend fun deleteComment(id: String) = call {
+        client.postgrest.rpc("delete_comment", buildJsonObject { put("p_comment", id) })
+        Unit
+    }
+
+    override suspend fun setHomeArea(area: HomeArea?): User = call {
+        toUser(client.postgrest.rpc("set_home_area", buildJsonObject {
+            if (area == null) {
+                put("p_lat", JsonNull); put("p_lng", JsonNull); put("p_radius_m", JsonNull)
+            } else {
+                put("p_lat", area.lat); put("p_lng", area.lng); put("p_radius_m", area.radius)
+            }
+        }).decodeAs<ProfileJson>())
+    }
 
     // ---------- moderation ----------
 

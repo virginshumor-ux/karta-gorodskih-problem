@@ -11,6 +11,7 @@ import kotlinx.serialization.json.jsonPrimitive
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import ru.sfu.kgp.BuildConfig
+import ru.sfu.kgp.domain.AirData
 import ru.sfu.kgp.domain.Complaint
 import ru.sfu.kgp.domain.WeatherData
 import ru.sfu.kgp.domain.Wmo
@@ -76,6 +77,7 @@ class Geocoder(private val http: OkHttpClient) {
 }
 
 data class WeatherState(val data: WeatherData, val live: Boolean)
+data class AirState(val data: AirData, val live: Boolean)
 
 /** Open-Meteo with the last answer cached (shown with its time when offline). */
 class WeatherRepository(private val http: OkHttpClient, private val settings: Settings, private val snapshot: () -> String) {
@@ -91,6 +93,20 @@ class WeatherRepository(private val http: OkHttpClient, private val settings: Se
                 val d = json.decodeFromString(WeatherData.serializer(), r.body.string()).copy(fetchedAt = System.currentTimeMillis())
                 settings.weatherJson = Json.encodeToString(WeatherData.serializer(), d)
                 WeatherState(d, true)
+            }
+        }.getOrNull()
+    }
+
+    /** Air quality has no bundled snapshot: without a cached answer the card is not shown. */
+    fun cachedAir(): AirState? = settings.airJson?.let { raw -> runCatching { AirState(json.decodeFromString(AirData.serializer(), raw), false) }.getOrNull() }
+
+    suspend fun fetchAir(): AirState? = withContext(Dispatchers.IO) {
+        runCatching {
+            http.newCall(Request.Builder().url(Wmo.AIR_URL).build()).execute().use { r ->
+                if (!r.isSuccessful) error("HTTP ${r.code}")
+                val d = json.decodeFromString(AirData.serializer(), r.body.string()).copy(fetchedAt = System.currentTimeMillis())
+                settings.airJson = Json.encodeToString(AirData.serializer(), d)
+                AirState(d, true)
             }
         }.getOrNull()
     }

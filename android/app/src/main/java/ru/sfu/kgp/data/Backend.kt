@@ -4,8 +4,10 @@ import kotlinx.coroutines.flow.Flow
 import ru.sfu.kgp.domain.AppNotification
 import ru.sfu.kgp.domain.AuthState
 import ru.sfu.kgp.domain.Category
+import ru.sfu.kgp.domain.Comment
 import ru.sfu.kgp.domain.Complaint
 import ru.sfu.kgp.domain.Duplicate
+import ru.sfu.kgp.domain.HomeArea
 import ru.sfu.kgp.domain.NewComplaint
 import ru.sfu.kgp.domain.Stats
 import ru.sfu.kgp.domain.Status
@@ -47,6 +49,13 @@ interface Backend {
     suspend fun markRead(ids: List<String>? = null)
     /** New notifications while the app is open (Realtime); empty for the demo backend. */
     fun notificationStream(): Flow<AppNotification>
+
+    suspend fun comments(complaintId: String): List<Comment>
+    suspend fun addComment(complaintId: String, text: String)
+    /** The author deletes the comment, a moderator hides it. */
+    suspend fun deleteComment(id: String)
+    /** Alerts about new complaints within the radius of the user's home; null switches them off. */
+    suspend fun setHomeArea(area: HomeArea?): User
 
     suspend fun moderateStatus(id: String, status: Status, comment: String? = null)
     suspend fun markDuplicate(id: String, originalId: String)

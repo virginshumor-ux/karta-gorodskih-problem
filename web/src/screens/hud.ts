@@ -10,10 +10,10 @@ function weatherChip(): string {
   if (!w) return "";
   const c = w.current;
   const ww = wmo(c.weather_code, c.is_day);
-  const t = Math.round(c.temperature_2m);
+  const t = Math.round(c.temperature_2m) || 0;
   const aq = S.air ? aqiLevel(S.air.data.current.european_aqi) : null;
   const aqText = aq ? `, воздух: ${aq.title.toLowerCase()}` : "";
-  return `<button class="weather-chip" data-go="weather" aria-label="Погода в Красноярске: ${t} градусов, ${esc(ww.text)}${aqText}" title="Погода и качество воздуха">${ico(ww.icon, "wicon")}<span><span class="t num">${c.temperature_2m > 0 ? "+" : ""}${t}°</span><small>${S.weather?.live ? '<span class="live-dot"></span>' : ""}${esc(ww.text)}</small></span>${aq ? `<i class="aq-dot" style="background:${aq.color}" title="Качество воздуха: ${aq.title}"></i>` : ""}</button>`;
+  return `<button class="weather-chip" data-go="weather" aria-label="Погода в Красноярске: ${t} градусов, ${esc(ww.text)}${aqText}" title="Погода и качество воздуха">${ico(ww.icon, "wicon")}<span><span class="t num">${t > 0 ? "+" : ""}${t}°</span><small>${S.weather?.live ? '<span class="live-dot"></span>' : ""}${esc(ww.text)}</small></span>${aq ? `<i class="aq-dot" style="background:${aq.color}" title="Качество воздуха: ${aq.title}"></i>` : ""}</button>`;
 }
 
 function sheetHtml(c: Complaint): string {

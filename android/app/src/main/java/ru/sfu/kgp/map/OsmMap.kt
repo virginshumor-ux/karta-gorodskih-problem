@@ -7,6 +7,8 @@ import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.Path
+import android.graphics.RadialGradient
+import android.graphics.Shader
 import android.graphics.RectF
 import android.graphics.Typeface
 import android.graphics.drawable.BitmapDrawable
@@ -34,8 +36,11 @@ import org.osmdroid.views.overlay.MapEventsOverlay
 import org.osmdroid.events.MapEventsReceiver
 import androidx.compose.runtime.getValue
 import org.osmdroid.views.overlay.Marker
+import org.osmdroid.views.overlay.Overlay
+import org.osmdroid.views.overlay.Polygon
 
 import ru.sfu.kgp.R
+import ru.sfu.kgp.domain.HomeArea
 import ru.sfu.kgp.domain.Category
 import ru.sfu.kgp.domain.Complaint
 import ru.sfu.kgp.domain.Status
@@ -218,6 +223,40 @@ private fun pin(map: MapView, c: Complaint, cat: Category, selected: Boolean, on
     setOnMarkerClickListener { _, _ -> onSelect(c.id); true }
 }
 
+/**
+ * Density view: every complaint is a soft radial spot (stronger with more supports); overlapping spots add up
+ * to "hot" areas. Radius ≈ 220 m on the ground, at least 26 dp on screen.
+ */
+class HeatOverlay(private val list: List<Complaint>) : Overlay() {
+    private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
+
+    override fun draw(c: Canvas, map: MapView, shadow: Boolean) {
+        if (shadow) return
+        val proj = map.projection
+        val density = map.context.resources.displayMetrics.density
+        val r = maxOf(26 * density, proj.metersToPixels(220f))
+        list.forEach { x ->
+            val pt = proj.toPixels(GeoPoint(x.lat, x.lng), null)
+            val a = (70 + minOf(x.supports, 40) * 3).coerceAtMost(190)
+            paint.shader = RadialGradient(
+                pt.x.toFloat(), pt.y.toFloat(), r,
+                intArrayOf(Color.argb(a, 214, 52, 26), Color.argb(a / 2, 240, 140, 40), Color.argb(0, 242, 179, 61)),
+                floatArrayOf(0f, 0.55f, 1f), Shader.TileMode.CLAMP,
+            )
+            c.drawCircle(pt.x.toFloat(), pt.y.toFloat(), r, paint)
+        }
+    }
+}
+
+private fun homeCircle(map: MapView, h: HomeArea, primary: Int) = Polygon(map).apply {
+    points = Polygon.pointsAsCircle(GeoPoint(h.lat, h.lng), h.radius.toDouble())
+    fillPaint.color = Color.argb(24, Color.red(primary), Color.green(primary), Color.blue(primary))
+    outlinePaint.color = primary
+    outlinePaint.strokeWidth = 2 * map.context.resources.displayMetrics.density
+    outlinePaint.pathEffect = android.graphics.DashPathEffect(floatArrayOf(18f, 14f), 0f)
+    setOnClickListener { _, _, _ -> false }
+}
+
 /** Main map with pins; [onReady] gives the MapView for zoom / locate buttons. */
 @Composable
 fun ComplaintsMap(
@@ -231,11 +270,14 @@ fun ComplaintsMap(
     onMode: (MapMode) -> Unit,
     onReady: (MapView) -> Unit,
     modifier: Modifier = Modifier,
+    heat: Boolean = false,
+    home: HomeArea? = null,
 ) {
     val context = LocalContext.current
     val map = remember { newMapView(context).apply { controller.setZoom(15.0); controller.setCenter(GeoPoint(56.0005, 92.7820)) } }
     val select by rememberUpdatedState(onSelect)
     val data = rememberUpdatedState(Triple(complaints, selected, cat))
+    val heatOn by rememberUpdatedState(heat)
     LaunchedEffect(map) {
         map.overlays.add(MapEventsOverlay(object : MapEventsReceiver {
             override fun singleTapConfirmedHelper(p: GeoPoint?): Boolean { select(null); return false }
@@ -244,6 +286,7 @@ fun ComplaintsMap(
         map.addMapListener(DelayedMapListener(object : MapListener {
             override fun onScroll(event: ScrollEvent?) = false
             override fun onZoom(event: ZoomEvent?): Boolean {
+                if (heatOn) return false
                 val (l, s, k) = data.value
                 drawPins(map, l, k, s, primary, ring) { select(it) }
                 return false
@@ -253,13 +296,21 @@ fun ComplaintsMap(
         applyBase(map, http, onMode)
     }
     val fitted = remember { booleanArrayOf(false) }
-    LaunchedEffect(complaints, selected) {
+    LaunchedEffect(complaints, selected, heat, home) {
         if (!fitted[0] && complaints.isNotEmpty()) {
             fitted[0] = true
             val box = BoundingBox.fromGeoPoints(complaints.map { GeoPoint(it.lat, it.lng) })
             map.post { runCatching { map.zoomToBoundingBox(box.increaseByScale(1.3f), false, 60, 16.0, null) } }
         }
-        map.post { drawPins(map, complaints, cat, selected, primary, ring) { select(it) } }
+        map.post {
+            map.overlays.removeAll { it is HeatOverlay || (it is Polygon && it.id == "home") }
+            home?.let { h -> map.overlays.add(1.coerceAtMost(map.overlays.size), homeCircle(map, h, primary).apply { id = "home" }) }
+            if (heat) {
+                map.overlays.removeAll { it is Marker }
+                map.overlays.add(HeatOverlay(complaints))
+                map.invalidate()
+            } else drawPins(map, complaints, cat, selected, primary, ring) { select(it) }
+        }
     }
     DisposableEffect(map) {
         map.onResume()

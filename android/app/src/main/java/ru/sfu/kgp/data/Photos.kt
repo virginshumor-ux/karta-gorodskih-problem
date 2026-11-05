@@ -30,6 +30,16 @@ class Photos(private val context: Context) {
     /** Target file for ActivityResultContracts.TakePicture (shared through the FileProvider). */
     fun newCaptureFile(): File = File(File(context.cacheDir, "camera").apply { mkdirs() }, "${UUID.randomUUID()}.jpg")
 
+    /**
+     * GPS tag of the original photo (smart create presets the place). Read on the device only: the compressed
+     * upload has no EXIF. The system photo picker removes the location, so this mostly works for camera shots.
+     */
+    suspend fun gps(uri: Uri): Pair<Double, Double>? = withContext(Dispatchers.IO) {
+        runCatching { context.contentResolver.openInputStream(uri)?.use { ExifInterface(it).latLong } }.getOrNull()
+            ?.let { it[0] to it[1] }
+            ?.takeIf { (lat, lng) -> lat.isFinite() && lng.isFinite() && !(lat == 0.0 && lng == 0.0) }
+    }
+
     suspend fun compress(uri: Uri): File = withContext(Dispatchers.IO) {
         val resolver = context.contentResolver
         val rotation = resolver.openInputStream(uri)?.use { exifRotation(ExifInterface(it)) } ?: 0

@@ -55,6 +55,7 @@ data class Complaint(
     val confirms: Int = 0,
     val confirmedByMe: Boolean = false,
     val history: List<HistoryItem> = emptyList(),
+    val comments: Int = 0,
 ) {
     /** Public gallery: "before" photos and approved "after" photos (the author also sees pending ones). */
     val gallery: List<Photo> get() = photos.filter { it.kind == "before" || it.approved || mine }
@@ -67,7 +68,13 @@ enum class Provider(val key: String, val title: String) { YANDEX("yandex", "Ян
 enum class Role { USER, MODERATOR, ADMIN }
 
 @Serializable
-data class UserStats(val complaints: Int = 0, val solved: Int = 0, val supported: Int = 0)
+data class UserStats(val complaints: Int = 0, val solved: Int = 0, val supported: Int = 0, val confirmed: Int = 0, val comments: Int = 0)
+
+/** "My area": alerts about new complaints within [radius] metres of the user's home (visible only to the user). */
+@Serializable
+data class HomeArea(val lat: Double, val lng: Double, val radius: Int)
+
+data class Comment(val id: String, val complaintId: String, val text: String, val author: String, val mine: Boolean, val hidden: Boolean, val at: Long)
 
 data class User(
     val id: String,
@@ -77,6 +84,7 @@ data class User(
     val notifyEnabled: Boolean,
     val isBlocked: Boolean,
     val stats: UserStats,
+    val home: HomeArea? = null,
 ) {
     val isModerator: Boolean get() = role == Role.MODERATOR || role == Role.ADMIN
 }
@@ -89,6 +97,7 @@ sealed interface AuthState {
 }
 
 enum class StatusFilter { OPEN, RESOLVED, ALL }
+enum class Sort(val title: String) { NEW("Новые"), NEAR("Рядом"), POPULAR("Популярные") }
 enum class Period(val days: Int?, val title: String) { ALL(null, "За всё время"), WEEK(7, "За 7 дней"), MONTH(30, "За 30 дней") }
 
 data class Filter(
@@ -97,6 +106,7 @@ data class Filter(
     val mine: Boolean = false,
     val district: String = "",
     val period: Period = Period.ALL,
+    val sort: Sort = Sort.NEW,
 )
 
 data class Duplicate(val id: String, val title: String, val status: Status, val supports: Int, val address: String, val distance: Double)
@@ -112,6 +122,8 @@ data class Stats(
     val byDistrict: List<Pair<String, Int>>,
     val medianModerationHours: Double?,
     val medianResolutionDays: Double?,
+    /** Resolved complaints per district (rating of districts). */
+    val resolvedByDistrict: Map<String, Int> = emptyMap(),
 )
 
 /** A complaint ready to be sent: photos are compressed JPEG files in the app storage. */

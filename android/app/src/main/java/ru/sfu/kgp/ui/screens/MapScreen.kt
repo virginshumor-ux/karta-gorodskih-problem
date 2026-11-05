@@ -53,7 +53,8 @@ import ru.sfu.kgp.domain.Krsk
 import ru.sfu.kgp.domain.StatusFilter
 import ru.sfu.kgp.domain.Wmo
 import ru.sfu.kgp.domain.fmtDate
-import ru.sfu.kgp.domain.iceRisk
+import ru.sfu.kgp.domain.aqiLevel
+import ru.sfu.kgp.domain.cityWarnings
 import ru.sfu.kgp.domain.plural
 import ru.sfu.kgp.map.ComplaintsMap
 import ru.sfu.kgp.map.MapMode
@@ -126,6 +127,7 @@ fun MapScreen(s: UiState, vm: MainViewModel, http: OkHttpClient, onOpen: (String
             primary = k.primary.toArgb(), ring = k.surface.toArgb(),
             onSelect = vm::select, onMode = vm::setMapMode, onReady = { mapView = it },
             modifier = Modifier.fillMaxSize().semantics { contentDescription = "Карта обращений: ${visible.size}" },
+            heat = s.heatmap, home = s.user?.home,
         )
         Column(Modifier.statusBarsPadding().padding(top = 10.dp)) {
             Row(Modifier.padding(horizontal = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -153,18 +155,23 @@ fun MapScreen(s: UiState, vm: MainViewModel, http: OkHttpClient, onOpen: (String
                         Sym(Wmo.icon(w.current.code, w.current.isDay == 1), size = 30.sp, color = k.primary)
                         Spacer(Modifier.width(6.dp))
                         Text("${if (t > 0) "+" else ""}$t°", fontSize = 20.sp, fontWeight = FontWeight.SemiBold, color = k.fg)
+                        s.air?.let { a ->
+                            val l = aqiLevel(a.data.current.aqi)
+                            Spacer(Modifier.width(6.dp))
+                            Box(Modifier.size(9.dp).clip(RoundedCornerShape(50)).background(androidx.compose.ui.graphics.Color(l.color)).semantics { contentDescription = "Качество воздуха: ${l.title}" })
+                        }
                     }
                 }
             }
-            iceRisk(s.weather?.data)?.let { risk ->
+            cityWarnings(s.weather?.data, s.air?.data).firstOrNull()?.let { risk ->
                 Row(
                     Modifier.padding(horizontal = 12.dp, vertical = 8.dp).fillMaxWidth().shadow(4.dp, RoundedCornerShape(16.dp)).clip(RoundedCornerShape(16.dp))
-                        .background(k.warnSoft).clickable(onClick = onWeather).padding(horizontal = 12.dp, vertical = 10.dp),
+                        .background(if (risk.bad) k.badSoft else k.warnSoft).clickable(onClick = onWeather).padding(horizontal = 12.dp, vertical = 10.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Sym("warning", color = k.warn, fill = true)
+                    Sym(risk.icon, color = if (risk.bad) k.bad else k.warn, fill = true)
                     Spacer(Modifier.width(10.dp))
-                    Text(risk, fontSize = 13.sp, color = k.fg, modifier = Modifier.weight(1f))
+                    Text(risk.text, fontSize = 13.sp, color = k.fg, modifier = Modifier.weight(1f))
                     Sym("chevron_right", color = k.fg2)
                 }
             }
@@ -182,6 +189,9 @@ fun MapScreen(s: UiState, vm: MainViewModel, http: OkHttpClient, onOpen: (String
             }
         }
         Column(Modifier.align(Alignment.BottomEnd).padding(end = 12.dp, bottom = 100.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Box(Modifier.shadow(4.dp, RoundedCornerShape(50))) {
+                IconBtn("local_fire_department", if (s.heatmap) "Показать метки" else "Тепловая карта проблем", vm::toggleHeatmap, tonal = !s.heatmap, on = s.heatmap)
+            }
             Box(Modifier.shadow(4.dp, RoundedCornerShape(50))) { IconBtn("add", "Приблизить", { mapView?.controller?.zoomIn() }, tonal = true) }
             Box(Modifier.shadow(4.dp, RoundedCornerShape(50))) { IconBtn("remove", "Отдалить", { mapView?.controller?.zoomOut() }, tonal = true) }
             Box(Modifier.shadow(4.dp, RoundedCornerShape(50))) {
@@ -194,13 +204,14 @@ fun MapScreen(s: UiState, vm: MainViewModel, http: OkHttpClient, onOpen: (String
         val mode = when {
             s.mapMode == MapMode.SNAPSHOT -> "Встроенная карта: сервер карт недоступен"
             s.offlineSince != null -> "Нет сети — сохранённые данные"
+            s.heatmap -> "Тепловая карта: чем ярче, тем больше проблем"
             else -> null
         }
         if (mode != null) Row(
             Modifier.align(Alignment.BottomStart).padding(start = 12.dp, bottom = 100.dp).clip(RoundedCornerShape(6.dp)).background(k.surface).padding(horizontal = 8.dp, vertical = 4.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Sym("cloud_off", size = 14.sp, color = k.fg2)
+            Sym(if (s.heatmap && mode.startsWith("Тепловая")) "local_fire_department" else "cloud_off", size = 14.sp, color = k.fg2)
             Text(" $mode", fontSize = 11.sp, color = k.fg2)
         }
         Text(
@@ -208,7 +219,7 @@ fun MapScreen(s: UiState, vm: MainViewModel, http: OkHttpClient, onOpen: (String
             fontSize = 10.sp, color = k.fg2,
             modifier = Modifier.align(Alignment.BottomEnd).padding(bottom = 84.dp, end = 4.dp).background(k.surface.copy(alpha = 0.8f)).padding(horizontal = 4.dp),
         )
-        s.find(s.selected)?.let { c -> Sheet(c, s, vm, onOpen, Modifier.align(Alignment.BottomCenter)) }
+        if (!s.heatmap) s.find(s.selected)?.let { c -> Sheet(c, s, vm, onOpen, Modifier.align(Alignment.BottomCenter)) }
     }
 }
 

@@ -33,6 +33,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -49,6 +50,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
@@ -88,6 +90,59 @@ fun share(context: Context, c: Complaint, site: String) {
     val link = complaintLink(site, c.id)
     val text = "${c.title} — ${c.address}, Красноярск" + if (link.isNotEmpty()) "\n$link" else ""
     context.startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, text), "Поделиться"))
+}
+
+/** Discussion of the complaint: everyone reads, signed-in residents write; the author deletes, a moderator hides. */
+@Composable
+private fun Comments(c: Complaint, s: UiState, vm: MainViewModel) {
+    val k = LocalKgp.current
+    val scope = rememberCoroutineScope()
+    var text by rememberSaveable(c.id) { mutableStateOf("") }
+    var sending by remember { mutableStateOf(false) }
+    LaunchedEffect(c.id, c.comments) { vm.loadComments(c.id) }
+    val list = s.commentsOf(c.id)
+    SectionTitle(if (c.comments > 0) "Обсуждение · ${c.comments}" else "Обсуждение")
+    Column(Modifier.padding(horizontal = 16.dp).testTag("comments"), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        when {
+            list == null -> Text(if (s.offlineSince != null) "Комментарии недоступны без сети." else "Загружаем обсуждение…", fontSize = 13.sp, color = k.fg2)
+            list.isEmpty() -> Text("Пока никто не написал. Расскажите, что изменилось на месте, — это поможет соседям и модератору.", fontSize = 13.sp, color = k.fg2)
+            else -> list.forEach { m ->
+                Row(Modifier.testTag("comment")) {
+                    Box(Modifier.size(36.dp).clip(CircleShape).background(k.primarySoft), contentAlignment = Alignment.Center) {
+                        Text(m.author.take(1).uppercase(), fontWeight = FontWeight.Bold, color = k.primary)
+                    }
+                    Spacer(Modifier.width(10.dp))
+                    Column(
+                        Modifier.weight(1f).clip(RoundedCornerShape(topStart = 4.dp, topEnd = 16.dp, bottomEnd = 16.dp, bottomStart = 16.dp))
+                            .background(if (m.mine) k.primarySoft else k.surface).border(if (m.mine) 0.dp else 1.dp, k.line, RoundedCornerShape(topStart = 4.dp, topEnd = 16.dp, bottomEnd = 16.dp, bottomStart = 16.dp))
+                            .padding(horizontal = 12.dp, vertical = 8.dp),
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(if (m.mine) "Вы" else m.author, fontWeight = FontWeight.SemiBold, fontSize = 13.sp, color = k.fg)
+                            Text("  ${fmtDate(m.at)}${if (m.hidden) " · скрыт модератором" else ""}", fontSize = 12.sp, color = k.fg3, modifier = Modifier.weight(1f))
+                            if (m.mine || (s.moderator && !m.hidden))
+                                Text(if (m.mine) "Удалить" else "Скрыть", fontSize = 12.sp, color = k.fg3, modifier = Modifier.clip(RoundedCornerShape(6.dp)).clickable { vm.deleteComment(c.id, m.id) }.padding(4.dp))
+                        }
+                        Text(m.text, color = if (m.hidden) k.fg3 else k.fg, fontSize = 14.sp)
+                    }
+                }
+            }
+        }
+        if (s.user != null) Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedTextField(
+                text, { text = it.take(1000) }, Modifier.weight(1f).testTag("comment-text"), placeholder = { Text("Написать комментарий…") },
+                shape = RoundedCornerShape(24.dp), colors = KTextFieldColors(), maxLines = 5,
+            )
+            IconBtn("send", "Отправить комментарий", {
+                if (!sending && text.isNotBlank()) scope.launch {
+                    sending = true
+                    if (vm.sendComment(c.id, text)) text = ""
+                    sending = false
+                }
+            }, tonal = true)
+        } else KBtn("Войти и написать комментарий", { vm.runAction("comment", c.id) }, kind = BtnKind.TONAL, icon = "forum")
+        Text("Без оскорблений и личных данных. Комментарии видны всем; модератор может скрыть нарушающие правила.", fontSize = 12.sp, color = k.fg3)
+    }
 }
 
 @OptIn(ExperimentalLayoutApi::class)
@@ -210,6 +265,7 @@ fun DetailScreen(id: String, s: UiState, vm: MainViewModel, http: OkHttpClient, 
                 }
             }
         }
+        Comments(c, s, vm)
         SectionTitle("История статусов")
         if (c.history.isEmpty()) Text(if (s.offlineSince != null) "История недоступна без сети." else "Загружаем историю…", fontSize = 13.sp, color = k.fg2, modifier = Modifier.padding(horizontal = 16.dp))
         Column(Modifier.padding(horizontal = 16.dp)) {

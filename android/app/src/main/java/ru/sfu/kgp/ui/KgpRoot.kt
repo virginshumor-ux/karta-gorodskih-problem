@@ -147,7 +147,7 @@ fun KgpRoot(container: AppContainer, vm: MainViewModel, nav: NavHostController =
             composable(Routes.LIST) { ListScreen(s, vm, open) { nav.tab(Routes.MAP) } }
             composable(Routes.NOTIF) { NotificationsScreen(s, vm) }
             composable(Routes.PROFILE) {
-                ProfileScreen(s, vm, open, { nav.navigate(Routes.STATS) }, { nav.navigate(Routes.WEATHER) }, { nav.navigate(Routes.ABOUT) }, { nav.navigate(Routes.PRIVACY) })
+                ProfileScreen(s, vm, open, { nav.navigate(Routes.STATS) }, { nav.navigate(Routes.WEATHER) }, { nav.navigate(Routes.ABOUT) }, { nav.navigate(Routes.PRIVACY) }, container.http)
             }
             composable(Routes.STATS) { StatsScreen(s, vm) { nav.popBackStack() } }
             composable(Routes.WEATHER) { WeatherScreen(s, vm) { nav.popBackStack() } }

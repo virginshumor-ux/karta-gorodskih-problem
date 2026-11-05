@@ -27,6 +27,15 @@ class Settings(private val prefs: SharedPreferences) {
         get() = prefs.getString("weather", null)
         set(v) = prefs.edit { putString("weather", v) }
 
+    var airJson: String?
+        get() = prefs.getString("air", null)
+        set(v) = prefs.edit { putString("air", v) }
+
+    /** Density view of the main map instead of pins. */
+    var heatmap: Boolean
+        get() = prefs.getBoolean("heatmap", false)
+        set(v) = prefs.edit { putBoolean("heatmap", v) }
+
     var pendingAction: String?
         get() = prefs.getString("pending", null)
         set(v) = prefs.edit { putString("pending", v) }

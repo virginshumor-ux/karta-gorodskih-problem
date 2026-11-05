@@ -10,10 +10,12 @@ import ru.sfu.kgp.domain.AppException
 import ru.sfu.kgp.domain.AppNotification
 import ru.sfu.kgp.domain.AuthState
 import ru.sfu.kgp.domain.Category
+import ru.sfu.kgp.domain.Comment
 import ru.sfu.kgp.domain.Complaint
 import ru.sfu.kgp.domain.DEFAULT_CATS
 import ru.sfu.kgp.domain.Duplicate
 import ru.sfu.kgp.domain.HistoryItem
+import ru.sfu.kgp.domain.HomeArea
 import ru.sfu.kgp.domain.Krsk
 import ru.sfu.kgp.domain.NewComplaint
 import ru.sfu.kgp.domain.Photo
@@ -33,6 +35,28 @@ private const val ME = "local-user"
 private const val DAY = 86_400_000L
 
 @Serializable
+private data class DemoComment(val id: String, val complaintId: String, val text: String, val author: String, val authorId: String, val at: Long, val hidden: Boolean = false)
+
+/** Demo discussion (same as the site): complaint number → [author, text, hours ago]. */
+private val DEMO_COMMENTS: Map<Int, List<Triple<String, String, Int>>> = mapOf(
+    1 to listOf(
+        Triple("житель_214", "Сегодня утром посыпали песком только половину ступеней, у правого края всё ещё лёд.", 20),
+        Triple("студент_ИУБП", "Подтверждаю, в 8:30 было очень скользко. Поддержал обращение.", 6),
+    ),
+    8 to listOf(
+        Triple("житель_377", "Видел, как ночью подъезжал грузовик и выгружал мусор. Номер не разглядел.", 50),
+        Triple("житель_101", "Это территория гаражного кооператива, можно написать и председателю.", 30),
+        Triple("житель_377", "Председателю писали в сентябре — без ответа.", 26),
+    ),
+    9 to listOf(Triple("житель_408", "Начали ремонт: сегодня сняли старый асфальт на половине участка.", 9)),
+    15 to listOf(Triple("житель_256", "Поставил рядом временное ограждение из веток, но это ненадолго.", 30)),
+)
+
+private fun seedComments(now: Long): List<DemoComment> = DEMO_COMMENTS.flatMap { (n, list) ->
+    list.mapIndexed { i, (author, text, ago) -> DemoComment("demo-$n-c$i", "demo-$n", text, author, "demo-$author", now - ago * 3_600_000L) }
+}
+
+@Serializable
 private data class DemoState(
     val complaints: List<Complaint>,
     val supporters: Map<String, List<String>> = emptyMap(),
@@ -43,6 +67,8 @@ private data class DemoState(
     val signedIn: Boolean = false,
     val moderator: Boolean = false,
     val notify: Boolean = true,
+    val comments: List<DemoComment> = emptyList(),
+    val home: HomeArea? = null,
 )
 
 /**
@@ -57,7 +83,7 @@ class DemoBackend(private val file: File?, private val clock: () -> Long = Syste
     private val stream = MutableSharedFlow<AppNotification>(extraBufferCapacity = 16)
 
     private fun load(): DemoState = file?.takeIf { it.exists() }?.let { runCatching { json.decodeFromString(DemoState.serializer(), it.readText()) }.getOrNull() }
-        ?: DemoState(complaints = seed(clock()), authors = mapOf("demo-4" to ME, "demo-7" to ME), notifications = seedNotifications(clock()))
+        ?: DemoState(complaints = seed(clock()), authors = mapOf("demo-4" to ME, "demo-7" to ME), notifications = seedNotifications(clock()), comments = seedComments(clock()))
 
     private fun save() {
         file?.let { f -> f.parentFile?.mkdirs(); f.writeText(json.encodeToString(DemoState.serializer(), st)) }
@@ -68,7 +94,11 @@ class DemoBackend(private val file: File?, private val clock: () -> Long = Syste
         val mine = st.complaints.filter { st.authors[it.id] == ME }
         return User(
             ME, nick, Provider.DEMO, if (st.moderator) Role.MODERATOR else Role.USER, st.notify, false,
-            UserStats(mine.size, mine.count { it.status == Status.RESOLVED || it.status == Status.RESOLVED_WAIT }, st.supporters.count { ME in it.value }),
+            UserStats(
+                mine.size, mine.count { it.status == Status.RESOLVED || it.status == Status.RESOLVED_WAIT }, st.supporters.count { ME in it.value },
+                st.confirmers.count { ME in it.value }, st.comments.count { it.authorId == ME && !it.hidden },
+            ),
+            st.home,
         )
     }
 
@@ -78,6 +108,7 @@ class DemoBackend(private val file: File?, private val clock: () -> Long = Syste
         mine = user() != null && st.authors[c.id] == ME,
         supportedByMe = ME in st.supporters[c.id].orEmpty(),
         confirmedByMe = ME in st.confirmers[c.id].orEmpty(),
+        comments = st.comments.count { it.complaintId == c.id && !it.hidden },
     )
 
     private fun need(): User = user() ?: throw AppException("Войдите, чтобы продолжить.", "KGP_AUTH")
@@ -117,7 +148,10 @@ class DemoBackend(private val file: File?, private val clock: () -> Long = Syste
     val moderatorMode: Boolean get() = st.moderator
 
     suspend fun resetDemo() = lock.withLock {
-        st = st.copy(complaints = seed(clock()), supporters = emptyMap(), confirmers = emptyMap(), authors = mapOf("demo-4" to ME, "demo-7" to ME), notifications = seedNotifications(clock()))
+        st = st.copy(
+            complaints = seed(clock()), supporters = emptyMap(), confirmers = emptyMap(), authors = mapOf("demo-4" to ME, "demo-7" to ME),
+            notifications = seedNotifications(clock()), comments = seedComments(clock()),
+        )
         save()
     }
 
@@ -144,6 +178,7 @@ class DemoBackend(private val file: File?, private val clock: () -> Long = Syste
             all.groupingBy { it.status }.eachCount().toList(),
             all.groupingBy { it.district.ifEmpty { "Район не определён" } }.eachCount().toList().sortedByDescending { it.second },
             null, null,
+            all.filter { it.status == Status.RESOLVED }.groupingBy { it.district.ifEmpty { "Район не определён" } }.eachCount(),
         )
     }
 
@@ -172,6 +207,7 @@ class DemoBackend(private val file: File?, private val clock: () -> Long = Syste
             supporters = st.supporters.mapValues { e -> e.value - ME },
             confirmers = st.confirmers.mapValues { e -> e.value - ME },
             notifications = emptyList(), nick = null, signedIn = false,
+            comments = st.comments.filter { it.authorId != ME }, home = null,
         )
         save()
     }
@@ -270,6 +306,41 @@ class DemoBackend(private val file: File?, private val clock: () -> Long = Syste
     }
 
     override fun notificationStream(): Flow<AppNotification> = stream
+
+    // ---------- discussion and "my area" ----------
+
+    override suspend fun comments(complaintId: String): List<Comment> = lock.withLock {
+        st.comments.filter { it.complaintId == complaintId && (!it.hidden || it.authorId == ME || st.moderator) }.sortedBy { it.at }
+            .map { Comment(it.id, it.complaintId, it.text, it.author, it.authorId == ME, it.hidden, it.at) }
+    }
+
+    override suspend fun addComment(complaintId: String, text: String) = lock.withLock {
+        val u = need()
+        val t = text.replace(Regex("\\s+"), " ").trim()
+        if (t.length !in 1..1000) throw AppException("Комментарий — от 1 до 1000 символов.", "KGP_COMMENT_LENGTH")
+        get(complaintId)
+        st = st.copy(comments = st.comments + DemoComment(UUID.randomUUID().toString(), complaintId, t, u.nick, ME, clock()))
+        save()
+    }
+
+    override suspend fun deleteComment(id: String) = lock.withLock {
+        need()
+        val x = st.comments.firstOrNull { it.id == id } ?: return@withLock
+        st = when {
+            x.authorId == ME -> st.copy(comments = st.comments.filterNot { it.id == id })
+            st.moderator -> st.copy(comments = st.comments.map { if (it.id == id) it.copy(hidden = true) else it })
+            else -> throw AppException("Удалить можно только свой комментарий.", "KGP_NOT_ALLOWED")
+        }
+        save()
+    }
+
+    override suspend fun setHomeArea(area: HomeArea?): User = lock.withLock {
+        need()
+        if (area != null && !Krsk.inCity(area.lat, area.lng)) throw AppException("Точка за пределами Красноярска.", "KGP_OUT_OF_CITY")
+        st = st.copy(home = area?.copy(radius = area.radius.coerceIn(100, 3000)))
+        save()
+        need()
+    }
 
     // ---------- moderation (demo switch in the profile) ----------
 

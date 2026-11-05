@@ -2,6 +2,7 @@ package ru.sfu.kgp.ui.screens
 
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -24,6 +25,25 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Text
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
+import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.IntrinsicSize
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.runtime.remember
+import okhttp3.OkHttpClient
+import org.osmdroid.util.GeoPoint
+import ru.sfu.kgp.domain.HomeArea
+import ru.sfu.kgp.domain.achievements
+import ru.sfu.kgp.domain.aqiLevel
+import ru.sfu.kgp.domain.cityWarnings
+import ru.sfu.kgp.domain.windDir
+import ru.sfu.kgp.map.PlacePickerMap
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -50,7 +70,7 @@ import androidx.compose.ui.unit.sp
 import ru.sfu.kgp.domain.Krsk
 import ru.sfu.kgp.domain.Wmo
 import ru.sfu.kgp.domain.fmtDate
-import ru.sfu.kgp.domain.iceRisk
+
 import ru.sfu.kgp.domain.plural
 import ru.sfu.kgp.domain.Provider
 import ru.sfu.kgp.domain.Role
@@ -115,9 +135,13 @@ fun NotificationsScreen(s: UiState, vm: MainViewModel) {
 // ---------- профиль ----------
 
 @Composable
-fun ProfileScreen(s: UiState, vm: MainViewModel, onOpen: (String) -> Unit, onStats: () -> Unit, onWeather: () -> Unit, onAbout: () -> Unit, onPrivacy: () -> Unit) {
+fun ProfileScreen(
+    s: UiState, vm: MainViewModel, onOpen: (String) -> Unit, onStats: () -> Unit, onWeather: () -> Unit, onAbout: () -> Unit, onPrivacy: () -> Unit,
+    http: OkHttpClient? = null,
+) {
     val k = LocalKgp.current
     var confirmDelete by rememberSaveable { mutableStateOf(false) }
+    var homeDialog by rememberSaveable { mutableStateOf(false) }
     Column(Modifier.fillMaxSize().background(k.bg).verticalScroll(rememberScrollState()).padding(bottom = 96.dp)) {
         TopBar("Профиль")
         ModeBanners(s)
@@ -127,15 +151,19 @@ fun ProfileScreen(s: UiState, vm: MainViewModel, onOpen: (String) -> Unit, onSta
         } else {
             val mine = s.complaints.filter { it.mine }.sortedByDescending { it.createdAt }
             val supported = s.complaints.filter { it.supportedByMe }.sortedByDescending { it.createdAt }
-            Row(Modifier.padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                Box(Modifier.size(64.dp).clip(CircleShape).background(k.primary), contentAlignment = Alignment.Center) {
-                    Text(u.nick.take(1).uppercase(), fontFamily = Unbounded, fontSize = 24.sp, color = k.onPrimary)
+            Row(
+                Modifier.padding(horizontal = 16.dp, vertical = 8.dp).fillMaxWidth().clip(RoundedCornerShape(26.dp))
+                    .background(Brush.linearGradient(listOf(Color(0xFF0A6670), Color(0xFF12949C)))).padding(18.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Box(Modifier.size(64.dp).clip(RoundedCornerShape(22.dp)).background(Color.White.copy(alpha = 0.2f)).border(2.dp, Color.White.copy(alpha = 0.35f), RoundedCornerShape(22.dp)), contentAlignment = Alignment.Center) {
+                    Text(u.nick.take(1).uppercase(), fontFamily = Unbounded, fontSize = 24.sp, color = Color.White)
                 }
                 Spacer(Modifier.width(14.dp))
                 Column {
-                    Text(u.nick, fontSize = 18.sp, fontWeight = FontWeight.SemiBold, color = k.fg)
+                    Text(u.nick, fontSize = 19.sp, fontWeight = FontWeight.SemiBold, color = Color.White)
                     val role = when (u.role) { Role.ADMIN -> " · администратор"; Role.MODERATOR -> " · модератор"; Role.USER -> "" }
-                    Text("Вход через ${if (u.provider == Provider.DEMO) "демо-вход" else u.provider.title} · ${Krsk.NAME}$role", fontSize = 13.sp, color = k.fg2)
+                    Text("Вход через ${if (u.provider == Provider.DEMO) "демо-вход" else u.provider.title} · ${Krsk.NAME}$role", fontSize = 13.sp, color = Color.White.copy(alpha = 0.85f))
                 }
             }
             Row(Modifier.padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -146,23 +174,56 @@ fun ProfileScreen(s: UiState, vm: MainViewModel, onOpen: (String) -> Unit, onSta
             if (s.pendingDrafts > 0) Banner("cloud_upload", "Черновиков ждут отправки: ${s.pendingDrafts}. Отправим при появлении сети.", warn = true) {
                 KBtn("Отправить", vm::flushDrafts, kind = BtnKind.TEXT)
             }
+            val ach = achievements(u, s.complaints)
+            SectionTitle("Достижения · ${ach.count { it.done }} из ${ach.size}")
+            Column(Modifier.padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                ach.chunked(2).forEach { row ->
+                    Row(Modifier.height(IntrinsicSize.Max), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        row.forEach { a ->
+                            Row(
+                                Modifier.weight(1f).fillMaxHeight().clip(RoundedCornerShape(18.dp)).background(k.surface).border(1.dp, k.line, RoundedCornerShape(18.dp)).padding(10.dp).testTag("badge"),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Box(
+                                    Modifier.size(40.dp).clip(RoundedCornerShape(14.dp)).background(if (a.done) Brush.linearGradient(listOf(Color(0xFFFF7A2E), Color(0xFFE9471A))) else Brush.linearGradient(listOf(k.surface2, k.surface2))),
+                                    contentAlignment = Alignment.Center,
+                                ) { Sym(a.icon, color = if (a.done) Color.White else k.fg3, fill = a.done) }
+                                Spacer(Modifier.width(10.dp))
+                                Column {
+                                    Text(a.title, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = k.fg, lineHeight = 16.sp)
+                                    Text(a.desc, fontSize = 11.sp, color = k.fg2, lineHeight = 14.sp)
+                                    if (!a.done) Box(Modifier.padding(top = 5.dp).fillMaxWidth().height(5.dp).clip(RoundedCornerShape(3.dp)).background(k.surface3)) {
+                                        Box(Modifier.fillMaxWidth(a.progress.toFloat() / a.goal).height(5.dp).clip(RoundedCornerShape(3.dp)).background(k.primary))
+                                    }
+                                }
+                            }
+                        }
+                        if (row.size == 1) Spacer(Modifier.weight(1f))
+                    }
+                }
+            }
             SectionTitle("Мои обращения")
             if (mine.isEmpty()) Text("Вы ещё не сообщали о проблемах.", color = k.fg2, modifier = Modifier.padding(horizontal = 16.dp))
-            mine.forEach { c -> Box(Modifier.padding(horizontal = 16.dp, vertical = 5.dp)) { ComplaintItem(c, s.cat(c.category)) { onOpen(c.id) } } }
+            mine.forEach { c -> Box(Modifier.padding(horizontal = 16.dp, vertical = 5.dp)) { ComplaintItem(c, s.cat(c.category), null) { onOpen(c.id) } } }
             SectionTitle("Поддержанные")
             if (supported.isEmpty()) Text("Нажмите «Я тоже видел» в карточке обращения — оно появится здесь, а вы будете получать уведомления.", color = k.fg2, modifier = Modifier.padding(horizontal = 16.dp))
-            supported.forEach { c -> Box(Modifier.padding(horizontal = 16.dp, vertical = 5.dp)) { ComplaintItem(c, s.cat(c.category)) { onOpen(c.id) } } }
+            supported.forEach { c -> Box(Modifier.padding(horizontal = 16.dp, vertical = 5.dp)) { ComplaintItem(c, s.cat(c.category), null) { onOpen(c.id) } } }
         }
         SectionTitle("Разделы")
         ListGroup {
             ListRow("bar_chart", "Статистика по району", chevron = true, onClick = onStats)
-            ListRow("partly_cloudy_day", "Погода и городские предупреждения", chevron = true, onClick = onWeather)
+            ListRow("partly_cloudy_day", "Погода, воздух и городские предупреждения", chevron = true, onClick = onWeather)
             ListRow("info", "О приложении и правила публикации", chevron = true, onClick = onAbout)
             ListRow("policy", "Политика обработки персональных данных", chevron = true, onClick = onPrivacy)
         }
         SectionTitle("Настройки")
         ListGroup {
             ListRow("dark_mode", "Тема оформления", trailing = s.theme.title, onClick = vm::cycleTheme)
+            if (u != null && http != null) ListRow(
+                "home_pin", "Мой район",
+                u.home?.let { "Уведомлять о новых обращениях в радиусе ${radiusText(it.radius)} от дома" } ?: "Укажите дом — сообщим о новых проблемах рядом",
+                chevron = true, onClick = { homeDialog = true },
+            )
             u?.let { ListRow("notifications", "Уведомления о статусах", "Ваши и поддержанные обращения", switch = it.notifyEnabled, onClick = { vm.toggleNotify() }) }
             if (s.isDemo) {
                 ListRow("shield_person", "Режим модератора (демо)", "Показывает кнопки модерации в карточке обращения", switch = s.moderator, onClick = { vm.toggleDemoModerator() })
@@ -179,6 +240,10 @@ fun ProfileScreen(s: UiState, vm: MainViewModel, onOpen: (String) -> Unit, onSta
         )
         if (s.moderator && !s.isDemo) Text("Очередь модерации, жалобы и справочники — в веб-панели модератора на сайте (раздел #/admin).", fontSize = 12.sp, color = k.fg2, modifier = Modifier.padding(horizontal = 16.dp))
     }
+    if (homeDialog && http != null && s.user != null) HomeAreaDialog(s.user!!.home, http, onDismiss = { homeDialog = false }) { area ->
+        homeDialog = false
+        vm.saveHome(area)
+    }
     if (confirmDelete) AlertDialog(
         onDismissRequest = { confirmDelete = false },
         title = { Text("Удалить учётную запись?") },
@@ -186,6 +251,44 @@ fun ProfileScreen(s: UiState, vm: MainViewModel, onOpen: (String) -> Unit, onSta
         confirmButton = { KBtn("Удалить", { confirmDelete = false; vm.deleteAccount() }, kind = BtnKind.DANGER) },
         dismissButton = { KBtn("Отмена", { confirmDelete = false }, kind = BtnKind.OUTLINE) },
     )
+}
+
+private fun radiusText(m: Int): String = if (m >= 1000) "${(m / 1000.0).toString().removeSuffix(".0").replace('.', ',')} км" else "$m м"
+
+/** "My area": the home point is chosen by moving the map under the pin; the point is visible only to the user. */
+@Composable
+private fun HomeAreaDialog(home: HomeArea?, http: OkHttpClient, onDismiss: () -> Unit, onSave: (HomeArea?) -> Unit) {
+    val k = LocalKgp.current
+    val start = remember { GeoPoint(home?.lat ?: Krsk.CAMPUS_LAT, home?.lng ?: Krsk.CAMPUS_LNG) }
+    var center by remember { mutableStateOf(start.latitude to start.longitude) }
+    var radius by rememberSaveable { mutableStateOf(home?.radius ?: 500) }
+    Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+        Column(
+            Modifier.padding(16.dp).fillMaxWidth().clip(RoundedCornerShape(28.dp)).background(k.surface).padding(20.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Text("Мой район", fontSize = 21.sp, fontWeight = FontWeight.SemiBold, color = k.fg)
+            Text("Передвиньте карту так, чтобы метка стояла у вашего дома. Мы сообщим о новых обращениях в выбранном радиусе. Точка видна только вам.", fontSize = 13.sp, color = k.fg2)
+            Box(Modifier.fillMaxWidth().height(240.dp).clip(RoundedCornerShape(18.dp)).border(1.dp, k.line, RoundedCornerShape(18.dp))) {
+                PlacePickerMap(start, http, onCenter = { a, b -> center = a to b }, onReady = {}, modifier = Modifier.fillMaxSize().testTag("home-map"))
+                Sym("home_pin", size = 44.sp, color = k.accent, fill = true, modifier = Modifier.align(Alignment.Center).offset(y = (-22).dp))
+            }
+            Row(Modifier.clip(RoundedCornerShape(50)).background(k.surface2).padding(3.dp)) {
+                listOf(300, 500, 1000, 2000).forEach { r ->
+                    val on = r == radius
+                    Text(
+                        radiusText(r), fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = if (on) k.fg else k.fg2,
+                        modifier = Modifier.clip(RoundedCornerShape(50)).background(if (on) k.surface else Color.Transparent).clickable { radius = r }.padding(horizontal = 14.dp, vertical = 8.dp).testTag("radius-$r"),
+                    )
+                }
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                if (home != null) KBtn("Отключить", { onSave(null) }, Modifier.weight(1f), kind = BtnKind.OUTLINE)
+                else KBtn("Отмена", onDismiss, Modifier.weight(1f), kind = BtnKind.OUTLINE)
+                KBtn("Сохранить", { onSave(HomeArea(center.first, center.second, radius)) }, Modifier.weight(1f).testTag("save-home"))
+            }
+        }
+    }
 }
 
 // ---------- статистика ----------
@@ -247,6 +350,26 @@ fun StatsScreen(s: UiState, vm: MainViewModel, onBack: () -> Unit) {
         if (st.byDistrict.isNotEmpty()) {
             SectionTitle("По районам")
             Bars(st.byDistrict.map { Triple(it.first.removeSuffix(" район"), it.second, k.primary) })
+            SectionTitle("Рейтинг районов по решённым проблемам")
+            KCard(Modifier.padding(horizontal = 16.dp).fillMaxWidth()) {
+                Column {
+                    st.byDistrict.map { (d, n) -> Triple(d, n, st.resolvedByDistrict[d] ?: 0) }
+                        .sortedWith(compareByDescending<Triple<String, Int, Int>> { if (it.second > 0) it.third.toDouble() / it.second else 0.0 }.thenByDescending { it.second })
+                        .forEachIndexed { i, (d, n, r) ->
+                            Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                                Box(
+                                    Modifier.size(28.dp).clip(RoundedCornerShape(9.dp)).background(if (i == 0) Brush.linearGradient(listOf(Color(0xFFFF7A2E), Color(0xFFE9471A))) else Brush.linearGradient(listOf(k.surface2, k.surface2))),
+                                    contentAlignment = Alignment.Center,
+                                ) { Text("${i + 1}", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = if (i == 0) Color.White else k.fg) }
+                                Column(Modifier.weight(1f).padding(horizontal = 10.dp)) {
+                                    Text(d.removeSuffix(" район"), fontSize = 14.sp, color = k.fg)
+                                    Text("решено $r из $n", fontSize = 12.sp, color = k.fg2)
+                                }
+                                Text("${if (n > 0) (r * 100.0 / n).roundToInt() else 0}%", fontWeight = FontWeight.SemiBold, color = k.fg)
+                            }
+                        }
+                }
+            }
         }
         if (st.medianModerationHours != null || st.medianResolutionDays != null) {
             SectionTitle("Скорость")
@@ -280,6 +403,41 @@ private fun Bars(rows: List<Triple<String, Int, androidx.compose.ui.graphics.Col
 
 // ---------- погода ----------
 
+private fun sign(t: Double): String = t.roundToInt().let { "${if (it > 0) "+" else ""}$it°" }
+
+private fun ago(ts: Long): String {
+    val m = ((System.currentTimeMillis() - ts) / 60_000).toInt()
+    return when {
+        m < 1 -> "только что"
+        m < 60 -> "$m мин назад"
+        else -> fmtDate(ts)
+    }
+}
+
+/** Background of the "now" card by weather and time of day (same palette as the site). */
+private fun wxGradient(code: Int, day: Boolean): Brush = Brush.linearGradient(
+    when {
+        !day -> listOf(Color(0xFF1D2B4F), Color(0xFF34477A))
+        code in setOf(71, 73, 75, 77, 85, 86) -> listOf(Color(0xFF4F7398), Color(0xFF93B2CF))
+        code >= 51 -> listOf(Color(0xFF3D5A73), Color(0xFF6D8AA1))
+        code >= 3 -> listOf(Color(0xFF4F6A78), Color(0xFF87A0AB))
+        else -> listOf(Color(0xFF0A6670), Color(0xFF19A2AB))
+    },
+)
+
+@Composable
+private fun Metric(icon: String, value: String, label: String, modifier: Modifier, rotate: Float? = null) {
+    val k = LocalKgp.current
+    Column(
+        modifier.clip(RoundedCornerShape(18.dp)).background(k.surface).border(1.dp, k.line, RoundedCornerShape(18.dp)).padding(12.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        Sym(icon, size = 20.sp, color = k.primary, modifier = if (rotate != null) Modifier.rotate(rotate) else Modifier)
+        Text(value, fontWeight = FontWeight.SemiBold, fontSize = 17.sp, color = k.fg)
+        Text(label, fontSize = 11.sp, color = k.fg2, lineHeight = 14.sp)
+    }
+}
+
 @Composable
 fun WeatherScreen(s: UiState, vm: MainViewModel, onBack: () -> Unit) {
     val k = LocalKgp.current
@@ -288,58 +446,137 @@ fun WeatherScreen(s: UiState, vm: MainViewModel, onBack: () -> Unit) {
         val w = s.weather?.data
         if (w == null) { EmptyState("cloud_off", "Данные о погоде пока не загружены."); return@Column }
         val c = w.current
-        val t = c.temperature.roundToInt()
-        Row(Modifier.padding(horizontal = 16.dp).fillMaxWidth().clip(RoundedCornerShape(28.dp)).background(k.primary).padding(20.dp), verticalAlignment = Alignment.CenterVertically) {
+        val live = s.weather.live
+        Row(
+            Modifier.padding(horizontal = 16.dp).fillMaxWidth().clip(RoundedCornerShape(32.dp)).background(wxGradient(c.code, c.isDay == 1)).padding(22.dp).testTag("wx-now"),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
             Column(Modifier.weight(1f)) {
-                Text("${if (c.temperature > 0) "+" else ""}$t°", fontFamily = Unbounded, fontSize = 56.sp, color = k.onPrimary, lineHeight = 60.sp)
-                Text(Wmo.text(c.code), fontWeight = FontWeight.SemiBold, color = k.onPrimary)
-                Text("Ощущается как ${c.apparent.roundToInt()}° · ветер ${"%.1f".format(c.wind)} м/с · влажность ${c.humidity}%", fontSize = 13.sp, color = k.onPrimary.copy(alpha = 0.85f))
+                Text(sign(c.temperature), fontFamily = Unbounded, fontSize = 60.sp, color = Color.White, lineHeight = 64.sp)
+                Text(Wmo.text(c.code), fontWeight = FontWeight.SemiBold, fontSize = 17.sp, color = Color.White)
+                Text(
+                    "Ощущается как ${sign(c.apparent)} · днём ${sign(w.daily.max.firstOrNull() ?: c.temperature)}, ночью ${sign(w.daily.min.firstOrNull() ?: c.temperature)}",
+                    fontSize = 13.sp, color = Color.White.copy(alpha = 0.9f),
+                )
+                Row(Modifier.padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    if (live) Box(Modifier.size(7.dp).clip(CircleShape).background(Color(0xFF7FD3A0)))
+                    Text(if (live) "  В реальном времени" else "Нет связи — сохранённые данные", fontSize = 12.sp, color = Color.White.copy(alpha = 0.9f))
+                }
             }
-            Sym(Wmo.icon(c.code, c.isDay == 1), size = 72.sp, color = k.onPrimary)
+            Sym(Wmo.icon(c.code, c.isDay == 1), size = 76.sp, color = Color.White)
         }
-        val risk = iceRisk(w)
-        KCard(Modifier.padding(start = 16.dp, end = 16.dp, top = 12.dp).fillMaxWidth(), bg = if (risk != null) k.warnSoft else null, border = risk == null) {
-            Row(Modifier.padding(horizontal = 14.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-                Sym(if (risk != null) "warning" else "verified", color = if (risk != null) k.warn else k.fg2, fill = risk != null)
-                Spacer(Modifier.width(8.dp))
-                Text(risk ?: "Погодных предупреждений для городской среды нет.", fontSize = 13.sp, color = k.fg)
+        Column(Modifier.padding(start = 16.dp, end = 16.dp, top = 12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                val dir = windDir(c.windDirection)
+                Metric("navigation", "${"%.1f".format(Locale.US, c.wind)} м/с", "ветер${if (dir.isNotEmpty()) ", $dir" else ""}${c.gusts?.let { " · порывы ${it.roundToInt()}" } ?: ""}", Modifier.weight(1f), c.windDirection?.let { ((it + 180) % 360).toFloat() })
+                Metric("water_drop", "${c.humidity}%", "влажность", Modifier.weight(1f))
+                Metric("compress", c.pressure?.let { "${(it * 0.750062).roundToInt()}" } ?: "—", "мм рт. ст.", Modifier.weight(1f))
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                Metric("sunny", c.uv?.let { "%.1f".format(Locale.US, it) } ?: "—", "УФ-индекс", Modifier.weight(1f))
+                Metric("wb_twilight", w.daily.sunrise?.firstOrNull()?.takeLast(5) ?: "—", "восход", Modifier.weight(1f))
+                Metric("bedtime", w.daily.sunset?.firstOrNull()?.takeLast(5) ?: "—", "закат", Modifier.weight(1f))
+            }
+            val warns = cityWarnings(w, s.air?.data)
+            if (warns.isEmpty()) KCard(Modifier.fillMaxWidth()) {
+                Row(Modifier.padding(horizontal = 14.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Sym("verified", color = k.ok, fill = true)
+                    Text("  Погодных предупреждений для городской среды нет.", fontSize = 13.sp, color = k.fg)
+                }
+            }
+            warns.forEach { x ->
+                Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(if (x.bad) k.badSoft else k.warnSoft).padding(horizontal = 14.dp, vertical = 12.dp)) {
+                    Sym(x.icon, color = if (x.bad) k.bad else k.warn, fill = true)
+                    Text("  ${x.text}", fontSize = 13.sp, color = k.fg)
+                }
+            }
+        }
+        s.air?.let { a ->
+            val v = a.data.current.aqi
+            val l = aqiLevel(v)
+            SectionTitle("Качество воздуха")
+            KCard(Modifier.padding(horizontal = 16.dp).fillMaxWidth().testTag("aq")) {
+                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Box(Modifier.size(60.dp).clip(RoundedCornerShape(20.dp)).background(Color(l.color)), contentAlignment = Alignment.Center) {
+                            Text("${v.roundToInt()}", fontFamily = Unbounded, fontSize = 20.sp, color = Color.White)
+                        }
+                        Spacer(Modifier.width(14.dp))
+                        Column {
+                            Text(l.title, fontWeight = FontWeight.SemiBold, fontSize = 17.sp, color = k.fg)
+                            Text(l.advice, fontSize = 13.sp, color = k.fg2)
+                        }
+                    }
+                    Box(Modifier.fillMaxWidth().height(8.dp).clip(RoundedCornerShape(4.dp)).background(Brush.horizontalGradient(listOf(Color(0xFF2E9D5B), Color(0xFF8BB43A), Color(0xFFE0A800), Color(0xFFE8611A), Color(0xFFC62828), Color(0xFF7B1FA2)))))
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        listOf("PM2.5" to a.data.current.pm25, "PM10" to a.data.current.pm10, "NO₂" to a.data.current.no2, "SO₂" to a.data.current.so2).forEach { (name, x) ->
+                            Column(Modifier.weight(1f).clip(RoundedCornerShape(12.dp)).background(k.surface2).padding(8.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                                Text(x?.roundToInt()?.toString() ?: "—", fontWeight = FontWeight.SemiBold, color = k.fg)
+                                Text(name, fontSize = 11.sp, color = k.fg2)
+                            }
+                        }
+                    }
+                    Text(
+                        "Концентрации в мкг/м³. Европейский индекс AQI по модели CAMS (Open-Meteo), ${if (a.live) "обновлено ${ago(a.data.fetchedAt ?: System.currentTimeMillis())}" else "сохранённые данные"}. Это модельная оценка, а не замер ближайшего поста.",
+                        fontSize = 11.sp, color = k.fg3,
+                    )
+                }
             }
         }
         SectionTitle("Ближайшие 24 часа")
         val t0 = runCatching { LocalDateTime.parse(c.time) }.getOrNull()
         Row(Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             w.hourly.time.indices.map { i -> i to runCatching { LocalDateTime.parse(w.hourly.time[i]) }.getOrNull() }
-                .filter { (_, dt) -> dt != null && (t0 == null || !dt.isBefore(t0.minusHours(1))) }.take(24).forEach { (i, dt) ->
+                .filter { (_, dt) -> dt != null && (t0 == null || !dt.isBefore(t0.minusHours(1))) }.take(24).forEachIndexed { n, (i, dt) ->
                     val h = dt!!.hour
-                    val temp = w.hourly.temperature.getOrElse(i) { 0.0 }.roundToInt()
                     val p = w.hourly.precipitationProbability?.getOrNull(i)
                     Column(
-                        Modifier.width(64.dp).clip(RoundedCornerShape(14.dp)).background(k.surface).padding(vertical = 10.dp),
+                        Modifier.width(66.dp).clip(RoundedCornerShape(18.dp)).background(if (n == 0) k.primarySoft else k.surface).padding(vertical = 12.dp).testTag("hour"),
                         horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(6.dp),
                     ) {
-                        Text("%02d:00".format(h), fontSize = 13.sp, color = k.fg2)
+                        Text(if (n == 0) "Сейчас" else "%02d:00".format(h), fontSize = 13.sp, color = k.fg2)
                         Sym(Wmo.icon(w.hourly.code.getOrElse(i) { 0 }, h in 7..18), color = k.primary)
-                        Text("${if (temp > 0) "+" else ""}$temp°", fontWeight = FontWeight.SemiBold, color = k.fg)
+                        Text(sign(w.hourly.temperature.getOrElse(i) { 0.0 }), fontWeight = FontWeight.SemiBold, color = k.fg)
                         Text(if (p != null && p > 0) "$p%" else " ", fontSize = 12.sp, color = k.fg2)
                     }
                 }
         }
-        SectionTitle("3 дня")
+        val days = w.daily.time.size
+        SectionTitle("Прогноз на $days ${plural(days, "день", "дня", "дней")}")
+        val lo = w.daily.min.minOrNull() ?: 0.0
+        val hi = w.daily.max.maxOrNull() ?: 0.0
+        val span = maxOf(1.0, hi - lo)
         ListGroup {
             w.daily.time.forEachIndexed { i, d ->
-                val day = if (i == 0) "Сегодня" else runCatching { LocalDate.parse(d).format(DateTimeFormatter.ofPattern("EEEE, d MMM", RU)) }.getOrDefault(d)
-                Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                val day = if (i == 0) "Сегодня" else runCatching { LocalDate.parse(d).format(DateTimeFormatter.ofPattern("EE, d MMM", RU)) }.getOrDefault(d)
+                val mn = w.daily.min.getOrElse(i) { 0.0 }
+                val mx = w.daily.max.getOrElse(i) { 0.0 }
+                val pp = w.daily.precipitationMax?.getOrNull(i)
+                Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     Sym(Wmo.icon(w.daily.code.getOrElse(i) { 0 }), color = k.fg2)
                     Column(Modifier.weight(1f)) {
                         Text(day, color = k.fg)
-                        Text(Wmo.text(w.daily.code.getOrElse(i) { 0 }), fontSize = 13.sp, color = k.fg2)
+                        Text(Wmo.text(w.daily.code.getOrElse(i) { 0 }) + if (pp != null && pp > 0) " · осадки $pp%" else "", fontSize = 12.sp, color = k.fg2)
                     }
-                    Text("${w.daily.max.getOrElse(i) { 0.0 }.roundToInt()}°", fontWeight = FontWeight.SemiBold, color = k.fg)
-                    Text("${w.daily.min.getOrElse(i) { 0.0 }.roundToInt()}°", color = k.fg2)
+                    Text(sign(mn), color = k.fg2, fontSize = 14.sp)
+                    Box(Modifier.width(72.dp).height(6.dp).clip(RoundedCornerShape(3.dp)).background(k.surface3)) {
+                        val start = ((mn - lo) / span).toFloat()
+                        val end = ((mx - lo) / span).toFloat()
+                        Box(
+                            Modifier.fillMaxWidth(end).height(6.dp).drawBehind {
+                                drawRoundRect(
+                                    Brush.horizontalGradient(listOf(Color(0xFF4AA3DF), Color(0xFFF2B33D), Color(0xFFF0611C))),
+                                    topLeft = Offset(size.width * (start / maxOf(end, 0.001f)), 0f),
+                                    cornerRadius = androidx.compose.ui.geometry.CornerRadius(3.dp.toPx()),
+                                )
+                            },
+                        )
+                    }
+                    Text(sign(mx), fontWeight = FontWeight.SemiBold, color = k.fg, fontSize = 14.sp)
                 }
             }
         }
-        val src = if (s.weather.live) "обновлено ${fmtDate(w.fetchedAt ?: System.currentTimeMillis())}"
+        val src = if (live) "обновлено ${ago(w.fetchedAt ?: System.currentTimeMillis())}, обновляется каждые 10 минут"
         else "сохранённые данные на " + (w.fetchedAt?.let { fmtDate(it) } ?: c.time.replace('T', ' '))
         Text("Источник: открытый API Open-Meteo (open-meteo.com), $src.", fontSize = 12.sp, color = k.fg3, modifier = Modifier.padding(16.dp))
     }

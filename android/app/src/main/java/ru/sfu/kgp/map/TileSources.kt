@@ -6,8 +6,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
-import org.osmdroid.tileprovider.tilesource.OnlineTileSourceBase
-import org.osmdroid.tileprovider.tilesource.XYTileSource
 import kotlin.math.abs
 
 /**
@@ -15,9 +13,7 @@ import kotlin.math.abs
  * OSM blocks clients without a proper User-Agent and serves an "Access blocked" image (sometimes with HTTP 200),
  * so the first tile is downloaded and checked by its pixels. CARTO basemaps are not used (they need an API key).
  */
-data class TileSourceDef(val id: String, val urls: Array<String>, val maxZoom: Int, val attribution: String, val probe: String) {
-    fun toOsmdroid(): OnlineTileSourceBase = XYTileSource(id, 3, maxZoom, 256, ".png", urls, attribution)
-}
+data class TileSourceDef(val id: String, val urls: Array<String>, val maxZoom: Int, val attribution: String, val probe: String)
 
 val TILE_SOURCES = listOf(
     TileSourceDef("OSM", arrayOf("https://tile.openstreetmap.org/"), 19, "© участники OpenStreetMap", "https://tile.openstreetmap.org/15/24828/10203.png"),

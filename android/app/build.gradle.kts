@@ -29,8 +29,10 @@ android {
         minSdk = 26
         targetSdk = 37
         versionCode = (System.getenv("GITHUB_RUN_NUMBER") ?: "1").toInt()
-        versionName = "1.1.0"
+        versionName = "1.2.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        // MapLibre ships native code: ARM phones only (every Android phone in practice), to keep the APK small.
+        ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a") }
 
         buildConfigField("String", "SUPABASE_URL", "\"${cfg("KGP_SUPABASE_URL", "supabase.url")}\"")
         buildConfigField("String", "SUPABASE_ANON_KEY", "\"${cfg("KGP_SUPABASE_ANON_KEY", "supabase.anonKey")}\"")
@@ -86,6 +88,8 @@ android {
 
     packaging {
         resources.excludes += setOf("/META-INF/{AL2.0,LGPL2.1}", "/META-INF/INDEX.LIST", "/META-INF/io.netty.versions.properties")
+        // The APK is downloaded from GitHub, not from a store: compressed native libraries keep it about half the size.
+        jniLibs.useLegacyPackaging = true
     }
 }
 
@@ -124,7 +128,7 @@ dependencies {
     implementation(libs.ktor.client.okhttp)
     implementation(libs.okhttp)
 
-    implementation(libs.osmdroid)
+    implementation(libs.maplibre)
     implementation(libs.coil.compose)
     implementation(libs.coil.network.okhttp)
     implementation(libs.kotlinx.serialization.json)

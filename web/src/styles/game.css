@@ -171,3 +171,4 @@
 .game-tile b { font-size: 14px; overflow-wrap: anywhere; line-height: 1.15; }
 .lvl-chip > span:last-child { white-space: nowrap; }
 .lvl-chip b { display: block; max-width: 150px; overflow: hidden; text-overflow: ellipsis; }
+.actions .btn { padding: 0 12px; font-size: 14px; }

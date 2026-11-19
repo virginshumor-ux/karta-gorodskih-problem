@@ -1,5 +1,8 @@
 package ru.sfu.kgp.ui.screens
 
+import androidx.compose.ui.draw.rotate
+import ru.sfu.kgp.ui.theme.StickerInk
+import ru.sfu.kgp.ui.sticker
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
@@ -108,8 +111,8 @@ private fun Comments(c: Complaint, s: UiState, vm: MainViewModel) {
             list.isEmpty() -> Text("Пока никто не написал. Расскажите, что изменилось на месте, — это поможет соседям и модератору.", fontSize = 13.sp, color = k.fg2)
             else -> list.forEach { m ->
                 Row(Modifier.testTag("comment")) {
-                    Box(Modifier.size(36.dp).clip(CircleShape).background(k.primarySoft), contentAlignment = Alignment.Center) {
-                        Text(m.author.take(1).uppercase(), fontWeight = FontWeight.Bold, color = k.primary)
+                    Box(Modifier.size(36.dp).clip(RoundedCornerShape(11.dp)).background(if (m.mine) k.lime else k.sun).border(2.dp, StickerInk, RoundedCornerShape(11.dp)), contentAlignment = Alignment.Center) {
+                        Text(m.author.take(1).uppercase(), fontWeight = FontWeight.Bold, color = StickerInk)
                     }
                     Spacer(Modifier.width(10.dp))
                     Column(
@@ -231,8 +234,8 @@ fun DetailScreen(id: String, s: UiState, vm: MainViewModel, http: OkHttpClient, 
             if (c.mine && c.status in setOf(Status.PUBLISHED, Status.SENT, Status.WORK))
                 KBtn("Добавить фото «после»", { pickAfter.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) }, Modifier.fillMaxWidth(), kind = BtnKind.OUTLINE, icon = "add_photo_alternate")
         }
-        Row(Modifier.padding(horizontal = 16.dp).fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(k.primarySoft).padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
-            Text("${c.supports}", fontSize = 24.sp, fontWeight = FontWeight.SemiBold, color = k.primary)
+        Row(Modifier.padding(horizontal = 16.dp).fillMaxWidth().sticker(k, k.lime).padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text("${c.supports}", fontSize = 30.sp, fontFamily = ru.sfu.kgp.ui.theme.Unbounded, color = StickerInk)
             Spacer(Modifier.width(12.dp))
             Text(
                 plural(c.supports, "житель поддержал", "жителя поддержали", "жителей поддержали") + " это обращение" +
@@ -272,7 +275,7 @@ fun DetailScreen(id: String, s: UiState, vm: MainViewModel, http: OkHttpClient, 
             c.history.forEachIndexed { i, h ->
                 Row {
                     Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.width(16.dp)) {
-                        Box(Modifier.padding(top = 4.dp).size(12.dp).clip(CircleShape).background(if (i == 0) k.primary else k.surface).border(2.dp, k.primary, CircleShape))
+                        Box(Modifier.padding(top = 4.dp).size(12.dp).rotate(45f).clip(RoundedCornerShape(3.dp)).background(if (i == 0) k.orange else k.surface).border(2.dp, k.ink, RoundedCornerShape(3.dp)))
                         if (i < c.history.lastIndex) Box(Modifier.width(2.dp).height(48.dp).background(k.line))
                     }
                     Spacer(Modifier.width(12.dp))

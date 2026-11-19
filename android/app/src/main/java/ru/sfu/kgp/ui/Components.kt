@@ -1,6 +1,5 @@
 package ru.sfu.kgp.ui
 
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -50,6 +49,21 @@ import ru.sfu.kgp.domain.Complaint
 import ru.sfu.kgp.domain.Status
 import ru.sfu.kgp.domain.fmtDate
 import ru.sfu.kgp.ui.theme.LocalKgp
+import androidx.compose.foundation.LocalIndication
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
+import androidx.compose.foundation.layout.offset
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.text.style.TextDecoration
+import ru.sfu.kgp.ui.theme.KgpColors
+import ru.sfu.kgp.ui.theme.LightKgp
+import ru.sfu.kgp.ui.theme.StickerInk
+import ru.sfu.kgp.ui.theme.Unbounded
 import ru.sfu.kgp.ui.theme.SymbolsFill
 import ru.sfu.kgp.ui.theme.SymbolsOutline
 import ru.sfu.kgp.ui.theme.parseHex
@@ -69,6 +83,25 @@ fun Sym(name: String, modifier: Modifier = Modifier, size: TextUnit = 22.sp, col
     )
 }
 
+/** Sticker surface: hard offset shadow (drawn outside the bounds), ink outline, rounded shape. */
+fun Modifier.sticker(k: KgpColors, bg: Color, radius: Dp = 16.dp, shadow: Dp = 4.dp, outline: Dp = 2.dp, shadowColor: Color = k.hard): Modifier {
+    val shape = RoundedCornerShape(radius)
+    return this
+        .drawBehind {
+            if (shadow > 0.dp) drawRoundRect(shadowColor, topLeft = Offset(shadow.toPx(), shadow.toPx()), size = size, cornerRadius = CornerRadius(radius.toPx()))
+        }
+        .clip(shape)
+        .background(bg)
+        .then(if (outline > 0.dp) Modifier.border(outline, k.ink, shape) else Modifier)
+}
+
+/** Pressed stickers sink into their shadow (like the site). */
+@Composable
+private fun pressOffset(source: MutableInteractionSource, depth: Dp): Dp {
+    val pressed by source.collectIsPressedAsState()
+    return if (pressed) depth else 0.dp
+}
+
 enum class BtnKind { PRIMARY, ACCENT, TONAL, OUTLINE, TEXT, ON, DANGER }
 
 @Composable
@@ -83,22 +116,30 @@ fun KBtn(
 ) {
     val k = LocalKgp.current
     val (bg, fg) = when (kind) {
-        BtnKind.PRIMARY, BtnKind.ON -> k.primary to k.onPrimary
-        BtnKind.ACCENT -> k.accent to k.onAccent
-        BtnKind.TONAL -> k.primarySoft to k.primary
-        BtnKind.OUTLINE -> Color.Transparent to k.fg
-        BtnKind.TEXT -> Color.Transparent to k.primary
-        BtnKind.DANGER -> k.bad to k.surface
+        BtnKind.PRIMARY -> (if (k.dark) k.lime else StickerInk) to (if (k.dark) StickerInk else k.onPrimary)
+        BtnKind.ON -> k.violet to Color.White
+        BtnKind.ACCENT -> k.orange to StickerInk
+        BtnKind.TONAL -> k.lime to StickerInk
+        BtnKind.OUTLINE -> k.surface to k.fg
+        BtnKind.TEXT -> Color.Transparent to k.fg
+        BtnKind.DANGER -> k.bad to Color.White
     }
+    val src = remember { MutableInteractionSource() }
+    val text3d = kind != BtnKind.TEXT && enabled
+    val shadow = if (!text3d) 0.dp else if (kind == BtnKind.OUTLINE) 2.dp else 3.dp
+    val sink = pressOffset(src, shadow)
+    val shadowColor = if (kind == BtnKind.PRIMARY && !k.dark) k.lime else k.hard
     Row(
         modifier
             .heightIn(min = 48.dp)
             .alpha(if (enabled) 1f else 0.45f)
-            .clip(RoundedCornerShape(24.dp))
-            .background(bg)
-            .then(if (kind == BtnKind.OUTLINE) Modifier.border(1.dp, k.line, RoundedCornerShape(24.dp)) else Modifier)
-            .clickable(enabled = enabled, role = Role.Button, onClick = onClick)
-            .padding(horizontal = if (kind == BtnKind.TEXT) 12.dp else 22.dp),
+            .offset(sink, sink)
+            .then(
+                if (kind == BtnKind.TEXT) Modifier.clip(RoundedCornerShape(14.dp))
+                else Modifier.sticker(k, bg, radius = 14.dp, shadow = shadow - sink, shadowColor = shadowColor),
+            )
+            .clickable(interactionSource = src, indication = LocalIndication.current, enabled = enabled, role = Role.Button, onClick = onClick)
+            .padding(horizontal = if (kind == BtnKind.TEXT) 12.dp else 20.dp),
         horizontalArrangement = Arrangement.Center,
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -106,43 +147,46 @@ fun KBtn(
             Sym(icon, size = 20.sp, color = fg, fill = iconFill)
             Spacer(Modifier.width(8.dp))
         }
-        Text(text, color = fg, fontWeight = FontWeight.SemiBold, fontSize = 15.sp, textAlign = TextAlign.Center)
+        Text(
+            text, color = fg, fontWeight = FontWeight.Bold, fontSize = 15.sp, textAlign = TextAlign.Center,
+            textDecoration = if (kind == BtnKind.TEXT) TextDecoration.Underline else null,
+        )
     }
 }
 
 @Composable
 fun IconBtn(icon: String, label: String, onClick: () -> Unit, modifier: Modifier = Modifier, tonal: Boolean = false, onDark: Boolean = false, on: Boolean = false) {
     val k = LocalKgp.current
+    val bg = if (on) k.lime else if (onDark) Color(0xFFF3EEE3) else if (tonal) k.surface else Color.Transparent
+    val raised = on || tonal || onDark
     Box(
         modifier
             .size(48.dp)
-            .clip(CircleShape)
-            .background(if (on) k.primary else if (onDark) Color(0x61000000) else if (tonal) k.surface else Color.Transparent)
+            .then(if (raised) Modifier.sticker(if (onDark) LightKgp else k, bg, radius = 14.dp, shadow = 3.dp) else Modifier.clip(RoundedCornerShape(14.dp)))
             .clickable(onClickLabel = label, role = Role.Button, onClick = onClick)
             .semantics { contentDescription = label },
         contentAlignment = Alignment.Center,
-    ) { Sym(icon, color = if (on) k.onPrimary else if (onDark) Color.White else k.fg, fill = on) }
+    ) { Sym(icon, color = if (on || onDark) StickerInk else k.fg, fill = on) }
 }
 
 @Composable
 fun KChip(text: String, on: Boolean, onClick: () -> Unit, icon: String? = null, raised: Boolean = false) {
     val k = LocalKgp.current
+    val fg = if (on) StickerInk else k.fg
     Row(
         Modifier
             .heightIn(min = 40.dp)
-            .clip(RoundedCornerShape(10.dp))
-            .background(if (on) k.primarySoft else k.surface)
-            .then(if (!on && !raised) Modifier.border(1.dp, k.line, RoundedCornerShape(10.dp)) else Modifier)
+            .sticker(k, if (on) k.lime else k.surface, radius = 20.dp, shadow = if (raised) 2.dp else 0.dp)
             .clickable(role = Role.Checkbox, onClick = onClick)
             .semantics { selected = on }
             .padding(horizontal = 14.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         if (icon != null) {
-            Sym(icon, size = 18.sp, color = if (on) k.primary else k.fg)
+            Sym(icon, size = 18.sp, color = fg)
             Spacer(Modifier.width(6.dp))
         }
-        Text(text, fontSize = 13.sp, fontWeight = FontWeight.Medium, color = if (on) k.primary else k.fg, maxLines = 1)
+        Text(text, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = fg, maxLines = 1)
     }
 }
 
@@ -151,12 +195,12 @@ fun StatusChip(s: Status, modifier: Modifier = Modifier) {
     val k = LocalKgp.current
     val (bg, fg) = k.status(s)
     Row(
-        modifier.clip(RoundedCornerShape(13.dp)).background(bg).heightIn(min = 26.dp).padding(horizontal = 10.dp),
+        modifier.clip(RoundedCornerShape(8.dp)).background(bg).border(2.dp, StickerInk, RoundedCornerShape(8.dp)).heightIn(min = 26.dp).padding(horizontal = 9.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Box(Modifier.size(8.dp).clip(CircleShape).background(fg))
+        Box(Modifier.size(7.dp).clip(CircleShape).background(fg))
         Spacer(Modifier.width(6.dp))
-        Text(s.title, color = fg, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
+        Text(s.title.uppercase(), color = fg, fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 0.3.sp, maxLines = 1)
     }
 }
 
@@ -173,12 +217,12 @@ fun DemoTag() {
 fun TopBar(title: String, onBack: (() -> Unit)? = null, subtitle: String? = null, actions: @Composable RowScope.() -> Unit = {}) {
     val k = LocalKgp.current
     Row(
-        Modifier.fillMaxWidth().background(k.bg).statusBarsPadding().heightIn(min = 64.dp).padding(horizontal = 8.dp),
+        Modifier.fillMaxWidth().background(k.bg).statusBarsPadding().heightIn(min = 66.dp).padding(horizontal = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         if (onBack != null) IconBtn("arrow_back", "Назад", onBack)
         Row(Modifier.weight(1f).padding(start = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-            Text(title, fontSize = 20.sp, fontWeight = FontWeight.SemiBold, color = k.fg, modifier = Modifier.semantics { heading() }, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(title, fontSize = 19.sp, fontFamily = Unbounded, fontWeight = FontWeight.SemiBold, color = k.fg, modifier = Modifier.semantics { heading() }, maxLines = 1, overflow = TextOverflow.Ellipsis)
             if (subtitle != null) Text(" · $subtitle", fontSize = 13.sp, color = k.fg2)
         }
         actions()
@@ -187,23 +231,18 @@ fun TopBar(title: String, onBack: (() -> Unit)? = null, subtitle: String? = null
 
 @Composable
 fun SectionTitle(text: String) {
-    Text(
-        text.uppercase(),
-        color = LocalKgp.current.fg2,
-        fontSize = 13.sp,
-        fontWeight = FontWeight.SemiBold,
-        letterSpacing = 0.8.sp,
-        modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 20.dp, bottom = 8.dp).semantics { heading() },
-    )
+    val k = LocalKgp.current
+    Row(Modifier.padding(start = 16.dp, end = 16.dp, top = 24.dp, bottom = 10.dp).semantics { heading() }, verticalAlignment = Alignment.CenterVertically) {
+        Box(Modifier.size(10.dp).rotate(45f).clip(RoundedCornerShape(3.dp)).background(k.orange).border(2.dp, k.ink, RoundedCornerShape(3.dp)))
+        Spacer(Modifier.width(10.dp))
+        Text(text.uppercase(), color = k.fg, fontSize = 12.sp, fontFamily = Unbounded, fontWeight = FontWeight.SemiBold, letterSpacing = 0.8.sp)
+    }
 }
 
 @Composable
 fun KCard(modifier: Modifier = Modifier, bg: Color? = null, border: Boolean = true, content: @Composable () -> Unit) {
     val k = LocalKgp.current
-    Box(
-        modifier.clip(RoundedCornerShape(16.dp)).background(bg ?: k.surface)
-            .then(if (border) Modifier.border(BorderStroke(1.dp, k.line), RoundedCornerShape(16.dp)) else Modifier),
-    ) { content() }
+    Box(modifier.sticker(k, bg ?: k.surface, shadow = if (border) 4.dp else 0.dp, outline = 2.dp)) { content() }
 }
 
 /** Category illustration instead of a photo (demo data has no photos), as in the prototype. */
@@ -233,15 +272,18 @@ fun PhotoOrIllustration(c: Complaint, cat: Category, index: Int = 0, iconSize: T
 
 @Composable
 fun Thumb(c: Complaint, cat: Category, size: Dp = 76.dp) {
-    Box(Modifier.size(size).clip(RoundedCornerShape(12.dp)).background(LocalKgp.current.surface2)) { PhotoOrIllustration(c, cat) }
+    val k = LocalKgp.current
+    Box(Modifier.size(size).clip(RoundedCornerShape(12.dp)).background(k.surface2).border(2.dp, k.ink, RoundedCornerShape(12.dp))) { PhotoOrIllustration(c, cat) }
 }
 
 @Composable
 fun ComplaintItem(c: Complaint, cat: Category, distance: String? = null, onClick: () -> Unit) {
     val k = LocalKgp.current
+    val src = remember { MutableInteractionSource() }
+    val sink = pressOffset(src, 3.dp)
     Row(
-        Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(k.surface).border(1.dp, k.line, RoundedCornerShape(16.dp))
-            .clickable(onClickLabel = "Открыть обращение", onClick = onClick).padding(10.dp),
+        Modifier.fillMaxWidth().offset(sink, sink).sticker(k, k.surface, shadow = 4.dp - sink)
+            .clickable(interactionSource = src, indication = LocalIndication.current, onClickLabel = "Открыть обращение", onClick = onClick).padding(10.dp),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         Thumb(c, cat)
@@ -250,7 +292,7 @@ fun ComplaintItem(c: Complaint, cat: Category, distance: String? = null, onClick
                 StatusChip(c.status)
                 if (c.demo) DemoTag()
             }
-            Text(c.title, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis, color = k.fg, lineHeight = 19.sp)
+            Text(c.title, fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis, color = k.fg, lineHeight = 19.sp)
             Meta(cat.icon, cat.name, "thumb_up", c.supports.toString())
             Meta("place", c.address, null, fmtDate(c.createdAt))
             if (c.comments > 0 || distance != null) Row(verticalAlignment = Alignment.CenterVertically) {
@@ -258,10 +300,10 @@ fun ComplaintItem(c: Complaint, cat: Category, distance: String? = null, onClick
                     Sym("forum", size = 15.sp, color = k.fg2)
                     Text(" ${c.comments}   ", fontSize = 12.sp, color = k.fg2)
                 }
-                if (distance != null) {
-                    Sym("near_me", size = 15.sp, color = k.primary)
-                    Text(" $distance", fontSize = 12.sp, color = k.primary, fontWeight = FontWeight.SemiBold)
-                }
+                if (distance != null) Text(
+                    " $distance ", fontSize = 12.sp, color = StickerInk, fontWeight = FontWeight.Bold,
+                    modifier = Modifier.clip(RoundedCornerShape(6.dp)).background(k.lime).padding(horizontal = 4.dp),
+                )
             }
         }
     }
@@ -283,8 +325,8 @@ private fun Meta(icon1: String, t1: String, icon2: String?, t2: String) {
 fun EmptyState(icon: String, text: String, action: (@Composable () -> Unit)? = null) {
     val k = LocalKgp.current
     Column(Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 40.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-        Sym(icon, size = 48.sp, color = k.fg3)
-        Spacer(Modifier.size(8.dp))
+        Box(Modifier.rotate(-6f).size(76.dp).sticker(k, k.sun, radius = 22.dp), contentAlignment = Alignment.Center) { Sym(icon, size = 34.sp, color = StickerInk) }
+        Spacer(Modifier.size(14.dp))
         Text(text, color = k.fg2, textAlign = TextAlign.Center)
         if (action != null) {
             Spacer(Modifier.size(12.dp))
@@ -297,8 +339,8 @@ fun EmptyState(icon: String, text: String, action: (@Composable () -> Unit)? = n
 fun Banner(icon: String, text: String, warn: Boolean = false, action: (@Composable () -> Unit)? = null) {
     val k = LocalKgp.current
     Row(
-        Modifier.padding(horizontal = 16.dp, vertical = 6.dp).fillMaxWidth().clip(RoundedCornerShape(12.dp))
-            .background(if (warn) k.warnSoft else k.infoSoft).padding(horizontal = 12.dp, vertical = 10.dp),
+        Modifier.padding(horizontal = 16.dp, vertical = 6.dp).fillMaxWidth().sticker(k, if (warn) k.warnSoft else k.infoSoft, shadow = 0.dp, outline = 2.dp)
+            .padding(horizontal = 12.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(10.dp),
     ) {
@@ -311,9 +353,7 @@ fun Banner(icon: String, text: String, warn: Boolean = false, action: (@Composab
 @Composable
 fun ListGroup(content: @Composable () -> Unit) {
     val k = LocalKgp.current
-    Column(Modifier.padding(horizontal = 16.dp).fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(k.surface).border(1.dp, k.line, RoundedCornerShape(16.dp))) {
-        content()
-    }
+    Column(Modifier.padding(horizontal = 16.dp).fillMaxWidth().sticker(k, k.surface)) { content() }
 }
 
 @Composable
@@ -323,13 +363,15 @@ fun ListRow(icon: String, title: String, subtitle: String? = null, trailing: Str
         Modifier.fillMaxWidth().heightIn(min = 52.dp)
             .clickable(role = if (switch != null) Role.Switch else Role.Button, onClick = onClick)
             .then(if (switch != null) Modifier.semantics { selected = switch } else Modifier)
-            .padding(horizontal = 16.dp, vertical = 12.dp),
+            .padding(horizontal = 14.dp, vertical = 11.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(14.dp),
     ) {
-        Sym(icon, color = if (danger) k.bad else k.fg2)
+        Box(Modifier.size(36.dp).clip(RoundedCornerShape(10.dp)).background(if (danger) k.badSoft else k.lime).border(2.dp, StickerInk, RoundedCornerShape(10.dp)), contentAlignment = Alignment.Center) {
+            Sym(icon, size = 19.sp, color = if (danger) k.bad else StickerInk)
+        }
         Column(Modifier.weight(1f)) {
-            Text(title, color = if (danger) k.bad else k.fg)
+            Text(title, color = if (danger) k.bad else k.fg, fontWeight = FontWeight.SemiBold)
             if (subtitle != null) Text(subtitle, fontSize = 13.sp, color = k.fg2)
         }
         if (trailing != null) Text(trailing, fontSize = 13.sp, color = k.fg2)
@@ -342,18 +384,18 @@ fun ListRow(icon: String, title: String, subtitle: String? = null, trailing: Str
 fun KSwitch(on: Boolean) {
     val k = LocalKgp.current
     Box(
-        Modifier.width(52.dp).size(52.dp, 32.dp).clip(RoundedCornerShape(16.dp)).background(if (on) k.primary else k.surface3)
-            .border(2.dp, if (on) k.primary else k.fg3, RoundedCornerShape(16.dp)).padding(4.dp),
+        Modifier.size(52.dp, 30.dp).clip(RoundedCornerShape(15.dp)).background(if (on) k.lime else k.surface3)
+            .border(2.dp, if (on) StickerInk else k.ink, RoundedCornerShape(15.dp)).padding(3.dp),
         contentAlignment = if (on) Alignment.CenterEnd else Alignment.CenterStart,
-    ) { Box(Modifier.size(20.dp).clip(CircleShape).background(if (on) k.onPrimary else k.fg3)) }
+    ) { Box(Modifier.size(20.dp).clip(RoundedCornerShape(6.dp)).background(if (on) StickerInk else k.fg)) }
 }
 
 @Composable
 fun Stat(value: String, label: String, modifier: Modifier = Modifier) {
     val k = LocalKgp.current
-    Column(modifier.clip(RoundedCornerShape(16.dp)).background(k.surface).border(1.dp, k.line, RoundedCornerShape(16.dp)).padding(12.dp).widthIn(min = 60.dp)) {
-        Text(value, fontSize = 26.sp, fontWeight = FontWeight.SemiBold, color = k.fg, lineHeight = 28.sp)
-        Text(label, fontSize = 12.sp, color = k.fg2)
+    Column(modifier.sticker(k, k.surface).padding(12.dp).widthIn(min = 60.dp)) {
+        Text(value, fontSize = 24.sp, fontFamily = Unbounded, fontWeight = FontWeight.SemiBold, color = k.fg, lineHeight = 28.sp)
+        Text(label, fontSize = 12.sp, color = k.fg2, fontWeight = FontWeight.Medium)
     }
 }
 

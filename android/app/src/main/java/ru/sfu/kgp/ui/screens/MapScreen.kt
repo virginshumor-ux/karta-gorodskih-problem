@@ -1,5 +1,9 @@
 package ru.sfu.kgp.ui.screens
 
+import ru.sfu.kgp.ui.theme.StickerInk
+import ru.sfu.kgp.ui.sticker
+import androidx.compose.foundation.border
+import androidx.compose.ui.draw.rotate
 import android.Manifest
 import android.annotation.SuppressLint
 import android.content.Context
@@ -35,7 +39,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
-import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
@@ -46,8 +49,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import okhttp3.OkHttpClient
-import org.osmdroid.util.GeoPoint
-import org.osmdroid.views.MapView
+import ru.sfu.kgp.map.GeoPoint
+import ru.sfu.kgp.map.KMap
 import ru.sfu.kgp.domain.Complaint
 import ru.sfu.kgp.domain.Krsk
 import ru.sfu.kgp.domain.StatusFilter
@@ -107,7 +110,7 @@ fun requestLocation(context: Context, onResult: (Location?) -> Unit) {
 fun MapScreen(s: UiState, vm: MainViewModel, http: OkHttpClient, onOpen: (String) -> Unit, onList: () -> Unit, onWeather: () -> Unit) {
     val k = LocalKgp.current
     val context = LocalContext.current
-    var mapView by remember { mutableStateOf<MapView?>(null) }
+    var mapView by remember { mutableStateOf<KMap?>(null) }
     val visible = s.visible
     val locate = {
         requestLocation(context) { l ->
@@ -124,7 +127,6 @@ fun MapScreen(s: UiState, vm: MainViewModel, http: OkHttpClient, onOpen: (String
     Box(Modifier.fillMaxSize().background(k.surface2)) {
         ComplaintsMap(
             complaints = visible, cat = s::cat, selected = s.selected, http = http,
-            primary = k.primary.toArgb(), ring = k.surface.toArgb(),
             onSelect = vm::select, onMode = vm::setMapMode, onReady = { mapView = it },
             modifier = Modifier.fillMaxSize().semantics { contentDescription = "Карта обращений: ${visible.size}" },
             heat = s.heatmap, home = s.user?.home,
@@ -132,12 +134,12 @@ fun MapScreen(s: UiState, vm: MainViewModel, http: OkHttpClient, onOpen: (String
         Column(Modifier.statusBarsPadding().padding(top = 10.dp)) {
             Row(Modifier.padding(horizontal = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Row(
-                    Modifier.weight(1f).shadow(4.dp, RoundedCornerShape(16.dp)).clip(RoundedCornerShape(16.dp)).background(k.surface)
+                    Modifier.weight(1f).sticker(k, k.surface)
                         .clickable(onClickLabel = "Открыть список обращений", role = Role.Button, onClick = onList).padding(8.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Box(Modifier.size(36.dp).clip(RoundedCornerShape(10.dp)).background(k.primary), contentAlignment = Alignment.Center) {
-                        Sym("location_on", color = k.onPrimary, fill = true)
+                    Box(Modifier.rotate(-5f).size(38.dp).clip(RoundedCornerShape(11.dp)).background(k.lime).border(2.dp, StickerInk, RoundedCornerShape(11.dp)), contentAlignment = Alignment.Center) {
+                        Sym("location_on", color = StickerInk, fill = true)
                     }
                     Spacer(Modifier.width(10.dp))
                     Column {
@@ -148,11 +150,11 @@ fun MapScreen(s: UiState, vm: MainViewModel, http: OkHttpClient, onOpen: (String
                 s.weather?.data?.let { w ->
                     val t = w.current.temperature.roundToInt()
                     Row(
-                        Modifier.heightIn(min = 52.dp).shadow(4.dp, RoundedCornerShape(16.dp)).clip(RoundedCornerShape(16.dp)).background(k.surface)
+                        Modifier.heightIn(min = 54.dp).sticker(k, k.surface)
                             .clickable(onClickLabel = "Погода в Красноярске: $t градусов, ${Wmo.text(w.current.code)}", onClick = onWeather).padding(horizontal = 10.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        Sym(Wmo.icon(w.current.code, w.current.isDay == 1), size = 30.sp, color = k.primary)
+                        Sym(Wmo.icon(w.current.code, w.current.isDay == 1), size = 30.sp, color = k.blue)
                         Spacer(Modifier.width(6.dp))
                         Text("${if (t > 0) "+" else ""}$t°", fontSize = 20.sp, fontWeight = FontWeight.SemiBold, color = k.fg)
                         s.air?.let { a ->
@@ -165,13 +167,12 @@ fun MapScreen(s: UiState, vm: MainViewModel, http: OkHttpClient, onOpen: (String
             }
             cityWarnings(s.weather?.data, s.air?.data).firstOrNull()?.let { risk ->
                 Row(
-                    Modifier.padding(horizontal = 12.dp, vertical = 8.dp).fillMaxWidth().shadow(4.dp, RoundedCornerShape(16.dp)).clip(RoundedCornerShape(16.dp))
-                        .background(if (risk.bad) k.badSoft else k.warnSoft).clickable(onClick = onWeather).padding(horizontal = 12.dp, vertical = 10.dp),
+                    Modifier.padding(horizontal = 12.dp, vertical = 8.dp).fillMaxWidth().sticker(k, if (risk.bad) k.pink else k.sun).clickable(onClick = onWeather).padding(horizontal = 12.dp, vertical = 10.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Sym(risk.icon, color = if (risk.bad) k.bad else k.warn, fill = true)
+                    Sym(risk.icon, color = StickerInk, fill = true)
                     Spacer(Modifier.width(10.dp))
-                    Text(risk.text, fontSize = 13.sp, color = k.fg, modifier = Modifier.weight(1f))
+                    Text(risk.text, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = StickerInk, maxLines = 2, modifier = Modifier.weight(1f))
                     Sym("chevron_right", color = k.fg2)
                 }
             }
@@ -180,21 +181,21 @@ fun MapScreen(s: UiState, vm: MainViewModel, http: OkHttpClient, onOpen: (String
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 listOf(StatusFilter.OPEN to "Актуальные", StatusFilter.RESOLVED to "Решённые", StatusFilter.ALL to "Все").forEach { (f, t) ->
-                    Box(Modifier.shadow(3.dp, RoundedCornerShape(10.dp))) { KChip(t, s.filter.status == f, { vm.setStatusFilter(f) }, raised = true) }
+                    KChip(t, s.filter.status == f, { vm.setStatusFilter(f) }, raised = true)
                 }
-                Box(Modifier.shadow(3.dp, RoundedCornerShape(10.dp))) { KChip("Мои", s.filter.mine, vm::toggleMine, icon = "person", raised = true) }
+                KChip("Мои", s.filter.mine, vm::toggleMine, icon = "person", raised = true)
                 s.cats.take(8).forEach { c ->
-                    Box(Modifier.shadow(3.dp, RoundedCornerShape(10.dp))) { KChip(c.name, c.id in s.filter.cats, { vm.toggleCat(c.id) }, icon = c.icon, raised = true) }
+                    KChip(c.name, c.id in s.filter.cats, { vm.toggleCat(c.id) }, icon = c.icon, raised = true)
                 }
             }
         }
         Column(Modifier.align(Alignment.BottomEnd).padding(end = 12.dp, bottom = 100.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Box(Modifier.shadow(4.dp, RoundedCornerShape(50))) {
+            Box {
                 IconBtn("local_fire_department", if (s.heatmap) "Показать метки" else "Тепловая карта проблем", vm::toggleHeatmap, tonal = !s.heatmap, on = s.heatmap)
             }
-            Box(Modifier.shadow(4.dp, RoundedCornerShape(50))) { IconBtn("add", "Приблизить", { mapView?.controller?.zoomIn() }, tonal = true) }
-            Box(Modifier.shadow(4.dp, RoundedCornerShape(50))) { IconBtn("remove", "Отдалить", { mapView?.controller?.zoomOut() }, tonal = true) }
-            Box(Modifier.shadow(4.dp, RoundedCornerShape(50))) {
+            Box { IconBtn("add", "Приблизить", { mapView?.controller?.zoomIn() }, tonal = true) }
+            Box { IconBtn("remove", "Отдалить", { mapView?.controller?.zoomOut() }, tonal = true) }
+            Box {
                 IconBtn("my_location", "Моё местоположение", {
                     if (lastKnownLocation(context) != null || ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED) locate()
                     else permission.launch(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION))
@@ -215,7 +216,7 @@ fun MapScreen(s: UiState, vm: MainViewModel, http: OkHttpClient, onOpen: (String
             Text(" $mode", fontSize = 11.sp, color = k.fg2)
         }
         Text(
-            "© участники OpenStreetMap",
+            "© OpenStreetMap · OpenFreeMap",
             fontSize = 10.sp, color = k.fg2,
             modifier = Modifier.align(Alignment.BottomEnd).padding(bottom = 84.dp, end = 4.dp).background(k.surface.copy(alpha = 0.8f)).padding(horizontal = 4.dp),
         )
@@ -227,8 +228,7 @@ fun MapScreen(s: UiState, vm: MainViewModel, http: OkHttpClient, onOpen: (String
 private fun Sheet(c: Complaint, s: UiState, vm: MainViewModel, onOpen: (String) -> Unit, modifier: Modifier) {
     val k = LocalKgp.current
     Column(
-        modifier.padding(start = 8.dp, end = 8.dp, bottom = 84.dp).fillMaxWidth().shadow(12.dp, RoundedCornerShape(28.dp))
-            .clip(RoundedCornerShape(28.dp)).background(k.surface).padding(start = 16.dp, end = 16.dp, top = 10.dp, bottom = 16.dp)
+        modifier.padding(start = 10.dp, end = 10.dp, bottom = 92.dp).fillMaxWidth().sticker(k, k.surface, radius = 24.dp, shadow = 6.dp).padding(start = 16.dp, end = 16.dp, top = 10.dp, bottom = 16.dp)
             .semantics { contentDescription = c.title },
     ) {
         Box(Modifier.align(Alignment.CenterHorizontally).size(32.dp, 4.dp).clip(RoundedCornerShape(2.dp)).background(k.line))

@@ -1,5 +1,8 @@
 package ru.sfu.kgp.ui.screens
 
+import androidx.compose.foundation.border
+import androidx.compose.ui.draw.rotate
+import ru.sfu.kgp.ui.sticker
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -68,11 +71,11 @@ fun Onboarding(step: Int, vm: MainViewModel) {
     ) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                repeat(3) { i -> Box(Modifier.size(if (i == step) 24.dp else 8.dp, 8.dp).clip(RoundedCornerShape(4.dp)).background(if (i == step) k.primary else k.surface3)) }
+                repeat(3) { i -> Box(Modifier.size(if (i == step) 26.dp else 10.dp, 10.dp).clip(RoundedCornerShape(3.dp)).background(if (i == step) k.orange else k.surface3).border(2.dp, k.ink, RoundedCornerShape(3.dp))) }
             }
             KBtn("Пропустить", { vm.onboardingNext(3) }, kind = BtnKind.TEXT)
         }
-        Box(Modifier.weight(1f).fillMaxWidth().heightIn(min = 220.dp).clip(RoundedCornerShape(28.dp)).background(sl.color ?: k.primary), contentAlignment = Alignment.Center) {
+        Box(Modifier.weight(1f).fillMaxWidth().heightIn(min = 220.dp).sticker(k, sl.color ?: k.orange, radius = 28.dp, shadow = 6.dp), contentAlignment = Alignment.Center) {
             Sym(sl.icon, size = 120.sp, color = k.onPrimary, fill = true)
         }
         Text(sl.title, fontFamily = Unbounded, fontSize = 24.sp, lineHeight = 29.sp, color = k.fg, modifier = Modifier.semantics { heading() })
@@ -91,7 +94,7 @@ fun LoginOverlay(reason: String, s: UiState, vm: MainViewModel, onPrivacy: () ->
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
         Row(Modifier.padding(top = 24.dp), verticalAlignment = Alignment.CenterVertically) {
-            Box(Modifier.size(56.dp).clip(RoundedCornerShape(16.dp)).background(k.primary), contentAlignment = Alignment.Center) { Sym("location_on", size = 32.sp, color = k.onPrimary, fill = true) }
+            Box(Modifier.rotate(-5f).size(58.dp).sticker(k, k.lime, radius = 18.dp), contentAlignment = Alignment.Center) { Sym("location_on", size = 32.sp, color = ru.sfu.kgp.ui.theme.StickerInk, fill = true) }
             Spacer(Modifier.width(14.dp))
             Text("Красноярск", fontSize = 13.sp, color = k.fg2)
         }

@@ -1,5 +1,6 @@
 package ru.sfu.kgp.ui.screens
 
+import ru.sfu.kgp.ui.sticker
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -71,7 +72,7 @@ fun ModeBanners(s: UiState) {
 fun KTextFieldColors() = OutlinedTextFieldDefaults.colors(
     focusedContainerColor = LocalKgp.current.surface,
     unfocusedContainerColor = LocalKgp.current.surface,
-    unfocusedBorderColor = LocalKgp.current.line,
+    unfocusedBorderColor = LocalKgp.current.ink,
     focusedBorderColor = LocalKgp.current.primary,
 )
 
@@ -81,7 +82,7 @@ private fun Select(icon: String, label: String, value: String, options: List<Pai
     var open by remember { mutableStateOf(false) }
     Box(modifier) {
         Row(
-            Modifier.fillMaxWidth().heightIn(min = 48.dp).clip(RoundedCornerShape(10.dp)).background(k.surface).border(1.dp, k.line, RoundedCornerShape(10.dp))
+            Modifier.fillMaxWidth().heightIn(min = 48.dp).sticker(k, k.surface, radius = 14.dp, shadow = 2.dp)
                 .clickable(onClickLabel = label, role = Role.DropdownList) { open = true }.padding(horizontal = 10.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -141,16 +142,17 @@ fun ListScreen(s: UiState, vm: MainViewModel, onOpen: (String) -> Unit, onMap: (
         }
         item {
             val k = LocalKgp.current
-            Row(Modifier.padding(horizontal = 16.dp, vertical = 4.dp).clip(RoundedCornerShape(50)).background(k.surface2).padding(3.dp)) {
+            Row(Modifier.padding(horizontal = 16.dp, vertical = 4.dp).sticker(k, k.surface, radius = 14.dp, shadow = 2.dp).padding(3.dp)) {
                 listOf(Sort.NEW to "schedule", Sort.NEAR to "near_me", Sort.POPULAR to "trending_up").forEach { (sort, icon) ->
                     val on = s.filter.sort == sort
                     Row(
-                        Modifier.clip(RoundedCornerShape(50)).background(if (on) k.surface else androidx.compose.ui.graphics.Color.Transparent)
+                        Modifier.clip(RoundedCornerShape(10.dp)).background(if (on) (if (k.dark) k.lime else ru.sfu.kgp.ui.theme.StickerInk) else androidx.compose.ui.graphics.Color.Transparent)
                             .clickable(role = Role.Tab) { pickSort(sort) }.padding(horizontal = 12.dp, vertical = 8.dp).testTag("sort-${sort.name.lowercase()}"),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        Sym(icon, size = 17.sp, color = if (on) k.fg else k.fg2)
-                        Text(" ${sort.title}", fontSize = 13.sp, color = if (on) k.fg else k.fg2)
+                        val fg = if (!on) k.fg2 else if (k.dark) ru.sfu.kgp.ui.theme.StickerInk else k.lime
+                        Sym(icon, size = 17.sp, color = fg)
+                        Text(" ${sort.title}", fontSize = 13.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold, color = fg)
                     }
                 }
             }

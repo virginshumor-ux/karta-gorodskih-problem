@@ -1,5 +1,9 @@
 package ru.sfu.kgp.ui
 
+import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
+import ru.sfu.kgp.ui.theme.StickerInk
 import android.Manifest
 import android.net.Uri
 import android.os.Build
@@ -190,18 +194,22 @@ fun KgpRoot(container: AppContainer, vm: MainViewModel, nav: NavHostController =
 private fun BottomNav(route: String, unread: Int, modifier: Modifier, onTab: (String) -> Unit) {
     val k = LocalKgp.current
     val current = if (route == Routes.DETAIL) Routes.MAP else route
+    // Ink bar with a road-cone FAB: the same bottom bar as the site.
+    val paper = Color(0xFFF3EEE3)
     Row(
-        modifier.fillMaxWidth().background(k.surface).border(1.dp, k.line).navigationBarsPadding().padding(horizontal = 4.dp, vertical = 6.dp),
+        modifier.navigationBarsPadding().padding(start = 10.dp, end = 10.dp, bottom = 8.dp).fillMaxWidth()
+            .clip(RoundedCornerShape(22.dp)).background(StickerInk).border(2.dp, if (k.dark) k.ink else StickerInk, RoundedCornerShape(22.dp))
+            .padding(horizontal = 4.dp, vertical = 6.dp),
         horizontalArrangement = Arrangement.SpaceEvenly,
-        verticalAlignment = Alignment.Bottom,
+        verticalAlignment = Alignment.CenterVertically,
     ) {
         TABS.forEach { (r, icon, label) ->
             if (r == Routes.CREATE) {
                 Box(
-                    Modifier.offset(y = (-14).dp).size(56.dp).shadow(4.dp, RoundedCornerShape(18.dp)).clip(RoundedCornerShape(18.dp)).background(k.accent)
+                    Modifier.rotate(-4f).size(56.dp).sticker(k, k.orange, radius = 18.dp, shadow = 4.dp, shadowColor = k.lime)
                         .clickable(onClickLabel = "Сообщить о проблеме", role = Role.Button) { onTab(r) }.semantics { contentDescription = "Сообщить о проблеме" }.testTag("nav-create"),
                     contentAlignment = Alignment.Center,
-                ) { Sym(icon, size = 30.sp, color = k.onAccent) }
+                ) { Sym(icon, size = 30.sp, color = StickerInk, fill = true) }
             } else {
                 val on = current == r
                 Column(
@@ -209,16 +217,17 @@ private fun BottomNav(route: String, unread: Int, modifier: Modifier, onTab: (St
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
                     Box {
-                        Box(Modifier.size(56.dp, 30.dp).clip(RoundedCornerShape(15.dp)).background(if (on) k.primarySoft else k.surface), contentAlignment = Alignment.Center) {
-                            Sym(icon, color = if (on) k.primary else k.fg2, fill = on)
+                        Box(Modifier.rotate(if (on) -3f else 0f).size(52.dp, 30.dp).clip(RoundedCornerShape(10.dp)).background(if (on) k.lime else Color.Transparent), contentAlignment = Alignment.Center) {
+                            Sym(icon, color = if (on) StickerInk else paper.copy(alpha = 0.7f), fill = on)
                         }
                         if (r == Routes.NOTIF && unread > 0) Text(
-                            "$unread", color = k.onAccent, fontSize = 10.sp,
-                            modifier = Modifier.align(Alignment.TopEnd).offset(x = 2.dp).clip(RoundedCornerShape(8.dp)).background(k.accent).padding(horizontal = 4.dp)
+                            "$unread", color = StickerInk, fontSize = 10.sp, fontWeight = FontWeight.Bold,
+                            modifier = Modifier.align(Alignment.TopEnd).offset(x = 4.dp, y = (-2).dp).clip(RoundedCornerShape(8.dp)).background(k.orange)
+                                .border(2.dp, StickerInk, RoundedCornerShape(8.dp)).padding(horizontal = 5.dp)
                                 .semantics { contentDescription = "$unread непрочитанных" },
                         )
                     }
-                    Text(label, fontSize = 12.sp, color = if (on) k.fg else k.fg2, modifier = Modifier.height(16.dp))
+                    Text(label, fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = if (on) paper else paper.copy(alpha = 0.66f), modifier = Modifier.height(16.dp))
                 }
             }
         }

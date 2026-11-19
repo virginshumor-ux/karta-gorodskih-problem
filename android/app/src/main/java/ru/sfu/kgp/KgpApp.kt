@@ -3,7 +3,8 @@ package ru.sfu.kgp
 import android.app.Application
 import android.content.Context
 import okhttp3.OkHttpClient
-import org.osmdroid.config.Configuration
+import org.maplibre.android.MapLibre
+import org.maplibre.android.module.http.HttpRequestUtil
 import ru.sfu.kgp.data.Backend
 import ru.sfu.kgp.data.DemoBackend
 import ru.sfu.kgp.data.Geocoder
@@ -41,16 +42,14 @@ open class KgpApp : Application() {
 
     override fun onCreate() {
         super.onCreate()
-        // OSM tile usage policy: an identifying User-Agent is mandatory, otherwise tiles are blocked.
-        Configuration.getInstance().apply {
-            userAgentValue = BuildConfig.APPLICATION_ID + "/" + BuildConfig.VERSION_NAME
-            osmdroidBasePath = File(cacheDir, "osmdroid")
-            osmdroidTileCache = File(cacheDir, "osmdroid/tiles")
-            // Only viewed tiles are cached; nothing is prefetched (no bulk downloads).
-            tileFileSystemCacheMaxBytes = 200L * 1024 * 1024
-        }
         check(USER_AGENT.isNotEmpty())
         if (!::container.isInitialized) container = AppContainer(this)
+        if (ru.sfu.kgp.map.mapsSupported) {
+            MapLibre.getInstance(this)
+            // Map tiles go through our OkHttp client: the identifying User-Agent required by the OSM tile policy.
+            // MapLibre caches only viewed tiles (ambient cache), nothing is prefetched.
+            HttpRequestUtil.setOkHttpClient(container.http)
+        }
         Notifier.createChannel(this)
         Work.scheduleNotificationPolling(this)
         Work.scheduleDraftUpload(this)

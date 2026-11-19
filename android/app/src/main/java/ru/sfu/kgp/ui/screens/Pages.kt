@@ -1,5 +1,7 @@
 package ru.sfu.kgp.ui.screens
 
+import ru.sfu.kgp.ui.theme.StickerInk
+import ru.sfu.kgp.ui.sticker
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -37,7 +39,7 @@ import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.runtime.remember
 import okhttp3.OkHttpClient
-import org.osmdroid.util.GeoPoint
+import ru.sfu.kgp.map.GeoPoint
 import ru.sfu.kgp.domain.HomeArea
 import ru.sfu.kgp.domain.achievements
 import ru.sfu.kgp.domain.aqiLevel
@@ -153,11 +155,11 @@ fun ProfileScreen(
             val supported = s.complaints.filter { it.supportedByMe }.sortedByDescending { it.createdAt }
             Row(
                 Modifier.padding(horizontal = 16.dp, vertical = 8.dp).fillMaxWidth().clip(RoundedCornerShape(26.dp))
-                    .background(Brush.linearGradient(listOf(Color(0xFF0A6670), Color(0xFF12949C)))).padding(18.dp),
+                    .background(k.violet).border(2.dp, k.ink, RoundedCornerShape(26.dp)).padding(18.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Box(Modifier.size(64.dp).clip(RoundedCornerShape(22.dp)).background(Color.White.copy(alpha = 0.2f)).border(2.dp, Color.White.copy(alpha = 0.35f), RoundedCornerShape(22.dp)), contentAlignment = Alignment.Center) {
-                    Text(u.nick.take(1).uppercase(), fontFamily = Unbounded, fontSize = 24.sp, color = Color.White)
+                Box(Modifier.rotate(-4f).size(64.dp).clip(RoundedCornerShape(20.dp)).background(k.lime).border(2.dp, StickerInk, RoundedCornerShape(20.dp)), contentAlignment = Alignment.Center) {
+                    Text(u.nick.take(1).uppercase(), fontFamily = Unbounded, fontSize = 26.sp, color = StickerInk)
                 }
                 Spacer(Modifier.width(14.dp))
                 Column {
@@ -181,7 +183,7 @@ fun ProfileScreen(
                     Row(Modifier.height(IntrinsicSize.Max), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                         row.forEach { a ->
                             Row(
-                                Modifier.weight(1f).fillMaxHeight().clip(RoundedCornerShape(18.dp)).background(k.surface).border(1.dp, k.line, RoundedCornerShape(18.dp)).padding(10.dp).testTag("badge"),
+                                Modifier.weight(1f).fillMaxHeight().sticker(k, k.surface, shadow = if (a.done) 4.dp else 0.dp).padding(10.dp).testTag("badge"),
                                 verticalAlignment = Alignment.CenterVertically,
                             ) {
                                 Box(
@@ -193,7 +195,7 @@ fun ProfileScreen(
                                     Text(a.title, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = k.fg, lineHeight = 16.sp)
                                     Text(a.desc, fontSize = 11.sp, color = k.fg2, lineHeight = 14.sp)
                                     if (!a.done) Box(Modifier.padding(top = 5.dp).fillMaxWidth().height(5.dp).clip(RoundedCornerShape(3.dp)).background(k.surface3)) {
-                                        Box(Modifier.fillMaxWidth(a.progress.toFloat() / a.goal).height(5.dp).clip(RoundedCornerShape(3.dp)).background(k.primary))
+                                        Box(Modifier.fillMaxWidth(a.progress.toFloat() / a.goal).height(5.dp).clip(RoundedCornerShape(3.dp)).background(k.violet))
                                     }
                                 }
                             }
@@ -429,10 +431,10 @@ private fun wxGradient(code: Int, day: Boolean): Brush = Brush.linearGradient(
 private fun Metric(icon: String, value: String, label: String, modifier: Modifier, rotate: Float? = null) {
     val k = LocalKgp.current
     Column(
-        modifier.clip(RoundedCornerShape(18.dp)).background(k.surface).border(1.dp, k.line, RoundedCornerShape(18.dp)).padding(12.dp),
+        modifier.sticker(k, k.surface, shadow = 2.dp).padding(12.dp),
         verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
-        Sym(icon, size = 20.sp, color = k.primary, modifier = if (rotate != null) Modifier.rotate(rotate) else Modifier)
+        Sym(icon, size = 20.sp, color = k.blue, modifier = if (rotate != null) Modifier.rotate(rotate) else Modifier)
         Text(value, fontWeight = FontWeight.SemiBold, fontSize = 17.sp, color = k.fg)
         Text(label, fontSize = 11.sp, color = k.fg2, lineHeight = 14.sp)
     }
@@ -448,7 +450,7 @@ fun WeatherScreen(s: UiState, vm: MainViewModel, onBack: () -> Unit) {
         val c = w.current
         val live = s.weather.live
         Row(
-            Modifier.padding(horizontal = 16.dp).fillMaxWidth().clip(RoundedCornerShape(32.dp)).background(wxGradient(c.code, c.isDay == 1)).padding(22.dp).testTag("wx-now"),
+            Modifier.padding(horizontal = 16.dp).fillMaxWidth().sticker(k, Color.Transparent, radius = 28.dp, shadow = 6.dp).background(wxGradient(c.code, c.isDay == 1)).padding(22.dp).testTag("wx-now"),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Column(Modifier.weight(1f)) {
@@ -485,9 +487,9 @@ fun WeatherScreen(s: UiState, vm: MainViewModel, onBack: () -> Unit) {
                 }
             }
             warns.forEach { x ->
-                Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(if (x.bad) k.badSoft else k.warnSoft).padding(horizontal = 14.dp, vertical = 12.dp)) {
-                    Sym(x.icon, color = if (x.bad) k.bad else k.warn, fill = true)
-                    Text("  ${x.text}", fontSize = 13.sp, color = k.fg)
+                Row(Modifier.fillMaxWidth().sticker(k, if (x.bad) k.pink else k.sun, shadow = 0.dp).padding(horizontal = 14.dp, vertical = 12.dp)) {
+                    Sym(x.icon, color = StickerInk, fill = true)
+                    Text("  ${x.text}", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = StickerInk)
                 }
             }
         }
@@ -531,11 +533,11 @@ fun WeatherScreen(s: UiState, vm: MainViewModel, onBack: () -> Unit) {
                     val h = dt!!.hour
                     val p = w.hourly.precipitationProbability?.getOrNull(i)
                     Column(
-                        Modifier.width(66.dp).clip(RoundedCornerShape(18.dp)).background(if (n == 0) k.primarySoft else k.surface).padding(vertical = 12.dp).testTag("hour"),
+                        Modifier.width(66.dp).clip(RoundedCornerShape(16.dp)).background(if (n == 0) k.lime else k.surface).border(2.dp, k.ink, RoundedCornerShape(16.dp)).padding(vertical = 12.dp).testTag("hour"),
                         horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(6.dp),
                     ) {
                         Text(if (n == 0) "Сейчас" else "%02d:00".format(h), fontSize = 13.sp, color = k.fg2)
-                        Sym(Wmo.icon(w.hourly.code.getOrElse(i) { 0 }, h in 7..18), color = k.primary)
+                        Sym(Wmo.icon(w.hourly.code.getOrElse(i) { 0 }, h in 7..18), color = if (n == 0) StickerInk else k.blue)
                         Text(sign(w.hourly.temperature.getOrElse(i) { 0.0 }), fontWeight = FontWeight.SemiBold, color = k.fg)
                         Text(if (p != null && p > 0) "$p%" else " ", fontSize = 12.sp, color = k.fg2)
                     }

@@ -1,5 +1,6 @@
 package ru.sfu.kgp.ui.screens
 
+import ru.sfu.kgp.ui.sticker
 import android.Manifest
 import android.net.Uri
 import androidx.activity.compose.BackHandler
@@ -68,8 +69,8 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil3.compose.AsyncImage
 import okhttp3.OkHttpClient
-import org.osmdroid.util.GeoPoint
-import org.osmdroid.views.MapView
+import ru.sfu.kgp.map.GeoPoint
+import ru.sfu.kgp.map.KMap
 import ru.sfu.kgp.BuildConfig
 import ru.sfu.kgp.data.Photos
 import ru.sfu.kgp.domain.Krsk
@@ -148,7 +149,7 @@ fun CreateScreen(
             Modifier.padding(horizontal = 16.dp).padding(bottom = 8.dp).semantics { progressBarRangeInfo = ProgressBarRangeInfo((d.step + 1).toFloat(), 1f..5f, 5) },
             horizontalArrangement = Arrangement.spacedBy(6.dp),
         ) {
-            repeat(5) { i -> Box(Modifier.weight(1f).height(4.dp).clip(RoundedCornerShape(2.dp)).background(if (i <= d.step) k.primary else k.surface3)) }
+            repeat(5) { i -> Box(Modifier.weight(1f).height(8.dp).clip(RoundedCornerShape(4.dp)).background(if (i <= d.step) k.orange else k.surface3).border(2.dp, k.ink, RoundedCornerShape(4.dp))) }
         }
         Column(Modifier.weight(1f).verticalScroll(rememberScrollState(), enabled = d.step != 1)) {
             when (d.step) {
@@ -239,7 +240,7 @@ private fun AddSlot(icon: String, label: String, modifier: Modifier, onClick: ()
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
     ) {
-        Sym(icon, size = 32.sp, color = k.primary)
+        Sym(icon, size = 32.sp, color = k.fg)
         Text(label, fontSize = 12.sp, color = k.fg2)
     }
 }
@@ -248,7 +249,7 @@ private fun AddSlot(icon: String, label: String, modifier: Modifier, onClick: ()
 private fun StepPlace(vm: CreateViewModel, lat: Double?, lng: Double?, address: String, district: String, hint: String, geocoding: Boolean, http: OkHttpClient) {
     val k = LocalKgp.current
     val context = LocalContext.current
-    var map by remember { mutableStateOf<MapView?>(null) }
+    var map by remember { mutableStateOf<KMap?>(null) }
     val start = remember { GeoPoint(lat ?: lastKnownLocation(context)?.latitude?.takeIf { Krsk.inCity(it, Krsk.CAMPUS_LNG) } ?: Krsk.CAMPUS_LAT, lng ?: lastKnownLocation(context)?.longitude?.takeIf { Krsk.inCity(Krsk.CAMPUS_LAT, it) } ?: Krsk.CAMPUS_LNG) }
     val locate = {
         vm.setGeoHint("Определяем местоположение…")
@@ -295,8 +296,7 @@ private fun StepCategory(vm: CreateViewModel, s: UiState, chosen: String?) {
         s.cats.forEach { c ->
             val on = chosen == c.id
             Column(
-                Modifier.weight(1f).heightIn(min = 104.dp).clip(RoundedCornerShape(16.dp)).background(if (on) k.primarySoft else k.surface)
-                    .border(2.dp, if (on) k.primary else k.line, RoundedCornerShape(16.dp))
+                Modifier.weight(1f).heightIn(min = 104.dp).sticker(k, if (on) k.lime else k.surface, shadow = if (on) 4.dp else 2.dp)
                     .clickable(role = Role.RadioButton) { vm.setCategory(c.id) }.semantics { selected = on }.padding(14.dp).testTag("cat-${c.id}"),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {

@@ -77,7 +77,7 @@ test("APK-independent shared base: create → moderate → realtime notification
   await expect(author.page.locator(".toast")).toContainText("опубликовано на карте", { timeout: 20_000 });
   // The success screen hides the bottom navigation (as in the prototype); the badge shows on the map.
   await author.page.click(".success [data-go=map]");
-  await expect(author.page.locator(".bottom-nav .nav-badge")).toBeVisible();
+  await expect(author.page.locator(".bell:visible .nav-badge").first()).toBeVisible();
 
   // now the guest sees it, with history and the photo
   await guest.reload();

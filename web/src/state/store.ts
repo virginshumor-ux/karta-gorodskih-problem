@@ -20,7 +20,8 @@ export type View =
   | "about"
   | "appeal"
   | "privacy"
-  | "admin";
+  | "admin"
+  | "quests";
 
 /** Action to continue after sign-in (the prototype's S.pending). Survives the OAuth redirect. */
 export type Pending = { go: View } | { act: string; id: string } | null;

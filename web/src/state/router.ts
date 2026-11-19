@@ -9,7 +9,7 @@ export interface Route {
   authCallback?: boolean;
 }
 
-const VIEWS: View[] = ["map", "list", "create", "notif", "profile", "stats", "weather", "about", "privacy", "admin"];
+const VIEWS: View[] = ["map", "list", "create", "notif", "profile", "stats", "weather", "about", "privacy", "admin", "quests"];
 
 export function parseHash(hash: string): Route {
   const raw = hash.replace(/^#\/?/, "");

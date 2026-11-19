@@ -1,7 +1,7 @@
 import { DISTRICTS } from "../domain/constants";
 import { esc, ico, plural } from "../domain/format";
 import { filtered, S } from "../state/store";
-import { itemHtml, offlineBanner, skeletonList, topbar } from "./common";
+import { bellBtn, itemHtml, offlineBanner, skeletonList, topbar } from "./common";
 
 const SORTS: [typeof S.filter.sort, string, string][] = [
   ["new", "schedule", "Новые"],
@@ -13,7 +13,7 @@ export function viewList(): string {
   const f = S.filter;
   const districts = [...new Set([...DISTRICTS, ...S.complaints.map((c) => c.district).filter(Boolean)])].sort((a, b) => a.localeCompare(b, "ru"));
   return `<div class="screen">
-    ${topbar("Обращения", { backBtn: false, right: `<button class="icon-btn" data-act="palette" aria-label="Быстрый поиск (Ctrl+K)" title="Быстрый поиск (Ctrl+K)">${ico("search")}</button><button class="icon-btn mobile-only" data-go="map" aria-label="Показать на карте">${ico("map")}</button>` })}
+    ${topbar("Обращения", { backBtn: false, right: `<button class="icon-btn" data-act="palette" aria-label="Быстрый поиск (Ctrl+K)" title="Быстрый поиск (Ctrl+K)">${ico("search")}</button><span class="mobile-only">${bellBtn()}</span>` })}
     ${offlineBanner()}
     <div class="pad"><input class="input" id="search" type="search" placeholder="Поиск по адресу или описанию" value="${esc(S.search)}" aria-label="Поиск"></div>
     <div class="row" style="overflow-x:auto;padding:12px 16px 4px;scrollbar-width:none">

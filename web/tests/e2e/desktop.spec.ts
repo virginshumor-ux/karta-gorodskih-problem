@@ -10,7 +10,8 @@ test("desktop layout repeats the prototype", async ({ page }) => {
   await page.reload();
   await page.evaluate(() => (window as any).KGP.closeOverlay());
   const rail = await page.locator("#rail .nav-item").allInnerTexts();
-  expect(rail).toHaveLength(3);
+  expect(rail).toHaveLength(4);
+  expect(rail.join(" ")).toContain("Квесты");
   expect(rail[0]).toContain("Обращения");
   expect(await page.locator("#panel .c-item").count()).toBeGreaterThan(5);
   const panel = await page.locator("#panel").boundingBox();

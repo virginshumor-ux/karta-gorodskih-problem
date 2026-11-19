@@ -13,6 +13,7 @@ export default defineConfig({
     __BUILD_DATE__: JSON.stringify(new Date().toISOString().slice(0, 10)),
   },
   server: { fs: { allow: [".."] } },
+  optimizeDeps: { include: ["maplibre-gl"] },
   build: { target: "es2022", sourcemap: true, chunkSizeWarningLimit: 900 },
   plugins: [
     {
@@ -52,6 +53,22 @@ export default defineConfig({
             options: {
               cacheName: "kgp-tiles",
               expiration: { maxEntries: 1500, maxAgeSeconds: 14 * 24 * 3600 },
+              cacheableResponse: { statuses: [200] },
+            },
+          },
+          {
+            // Vector map: the TileJSON, glyphs and tiles the user has viewed (no bulk prefetch).
+            // The TileJSON points to the current dated tile set: always ask the network first.
+            urlPattern: ({ url }) => url.hostname === "tiles.openfreemap.org" && url.pathname === "/planet",
+            handler: "NetworkFirst",
+            options: { cacheName: "kgp-vector-index", networkTimeoutSeconds: 5, expiration: { maxEntries: 2 } },
+          },
+          {
+            urlPattern: ({ url }) => url.hostname === "tiles.openfreemap.org" && url.pathname !== "/planet",
+            handler: "CacheFirst",
+            options: {
+              cacheName: "kgp-vector",
+              expiration: { maxEntries: 2500, maxAgeSeconds: 14 * 24 * 3600 },
               cacheableResponse: { statuses: [200] },
             },
           },

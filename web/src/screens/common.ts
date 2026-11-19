@@ -45,12 +45,21 @@ const NAV: [string, string, string][] = [
   ["map", "map", "Карта"],
   ["list", "format_list_bulleted", "Список"],
   ["create", "add", ""],
+  ["quests", "sports_esports", "Квесты"],
   ["notif", "notifications", "Уведомления"],
   ["profile", "person", "Профиль"],
 ];
 
+const unreadCount = (): number => S.notifications.filter((n) => !n.read).length;
+
+/** Bell with the unread counter: notifications live in the top bars on the phone (the bottom bar has quests). */
+export function bellBtn(): string {
+  const n = unreadCount();
+  return `<button class="icon-btn bell" data-go="notif" aria-label="Уведомления${n ? `: ${n} непрочитанных` : ""}" title="Уведомления">${ico("notifications", n ? "fill" : "")}${n ? `<span class="nav-badge num">${n}</span>` : ""}</button>`;
+}
+
 export function navHtml(rail: boolean): string {
-  const unread = S.notifications.filter((n) => !n.read).length;
+  const unread = unreadCount();
   const cur =
     S.view === "detail" || S.view === "appeal"
       ? (S.prev[S.prev.length - 1] ?? "map")
@@ -58,7 +67,8 @@ export function navHtml(rail: boolean): string {
         ? "profile"
         : S.view;
   const curN = rail && cur === "map" ? "list" : cur;
-  return NAV.filter(([v]) => !(rail && v === "map"))
+  // Phone: map, list, +, quests, profile. Computer rail: list, +, quests, notifications, profile.
+  return NAV.filter(([v]) => (rail ? v !== "map" : v !== "notif"))
     .map(([v, i, t]) =>
       v === "create"
         ? `<button class="nav-fab" data-go="create" aria-label="Сообщить о проблеме" title="Сообщить о проблеме">${ico("add_a_photo")}</button>`

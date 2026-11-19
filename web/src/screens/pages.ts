@@ -8,7 +8,9 @@ import type { Stats } from "../domain/types";
 import { ls } from "../state/storage";
 import { cat, isModerator, S, user } from "../state/store";
 import { markdown } from "../ui/dom";
-import { itemHtml, offlineBanner, topbar } from "./common";
+import { game } from "../game/game";
+import { bellBtn, itemHtml, offlineBanner, topbar } from "./common";
+import { currentLevel } from "./quests";
 
 // ---------- уведомления ----------
 
@@ -36,15 +38,17 @@ export function viewNotif(): string {
 export function viewProfile(): string {
   const u = user();
   if (!u)
-    return `<div class="screen">${topbar("Профиль", { backBtn: false })}${offlineBanner()}<div class="empty">${ico("account_circle")}<p>Войдите, чтобы сообщать о проблемах и получать уведомления о статусе.</p><button class="btn primary" data-act="login">Войти</button></div>${settingsHtml()}</div>`;
+    return `<div class="screen">${topbar("Профиль", { backBtn: false, right: `<span class="mobile-only">${bellBtn()}</span>` })}${offlineBanner()}<div class="empty">${ico("account_circle")}<p>Войдите, чтобы сообщать о проблемах и получать уведомления о статусе.</p><button class="btn primary" data-act="login">Войти</button></div>${settingsHtml()}</div>`;
   const mine = S.complaints.filter((c) => c.mine).sort((a, b) => b.createdAt - a.createdAt);
   const supported = S.complaints.filter((c) => c.supportedByMe).sort((a, b) => b.createdAt - a.createdAt);
   const solved = mine.filter((c) => c.status === "resolved" || c.status === "resolved_wait").length;
   const provider = { yandex: "Яндекс ID", vk: "VK ID", demo: "демо-вход" }[u.provider];
   const role = u.role === "admin" ? " · администратор" : u.role === "moderator" ? " · модератор" : "";
-  return `<div class="screen">${topbar("Профиль", { backBtn: false })}
+  const g = game();
+  const lv = currentLevel();
+  return `<div class="screen">${topbar("Профиль", { backBtn: false, right: `<span class="mobile-only">${bellBtn()}</span>` })}
     ${offlineBanner()}
-    <div class="profile-head"><div class="avatar" aria-hidden="true">${esc((u.nick[0] ?? "?").toUpperCase())}</div><div class="grow"><b style="font-size:19px">${esc(u.nick)}</b><div class="small muted">Вход через ${provider} · ${CITY.name}${role}</div></div></div>
+    <div class="profile-head"><div class="avatar ${g.equipped.frame !== "none" ? "fr-" + g.equipped.frame : ""}" aria-hidden="true">${esc((u.nick[0] ?? "?").toUpperCase())}</div><div class="grow" style="position:relative;z-index:1"><b style="font:800 19px var(--display)">${esc(u.nick)}</b><div class="small" style="font-weight:700">${esc(g.equipped.title || lv.title)} · LVL ${lv.level}</div><div class="small muted">Вход через ${provider} · ${CITY.name}${role}</div></div><button class="xp-pill" data-go="quests" style="position:relative;z-index:1">🌰<i class="num">${g.coins}</i></button></div>
     <div class="stat-row"><div class="stat">${ico("flag", "st-ico")}<b class="num">${mine.length}</b><span>${plural(mine.length, "обращение", "обращения", "обращений")}</span></div><div class="stat">${ico("task_alt", "st-ico")}<b class="num">${solved}</b><span>решено</span></div><div class="stat">${ico("thumb_up", "st-ico")}<b class="num">${supported.length}</b><span>поддержано</span></div></div>
     ${S.pendingDrafts ? `<div class="mode-banner warn" style="margin-top:12px">${ico("cloud_upload")}<span>Черновиков ждут отправки: ${S.pendingDrafts}. Отправим при появлении сети.</span><button class="btn text" data-act="flushdrafts">Отправить</button></div>` : ""}
     ${achievementsHtml()}
@@ -163,6 +167,19 @@ function ago(ts: number): string {
   return fmtDate(ts);
 }
 
+/** One-line weather caption in the voice of the app. */
+export function wxQuip(t: number, code: number, aqi?: number): string {
+  if (aqi != null && aqi > 60) return "Чёрное небо — сегодня лучше сериалы дома 🫠";
+  if ([56, 57, 66, 67].includes(code)) return "Ледяной дождь. Ходи как пингвин 🐧";
+  if (t <= -30) return "−30 — это не мороз, это сибирская свежесть 🥶";
+  if (t <= -15) return "Шапку надел? Надень. Мы серьёзно 🧣";
+  if (t <= 1) return "Около нуля — скользко, смотри под ноги 🐧";
+  if ([71, 73, 75, 77, 85, 86].includes(code)) return "Снег идёт — ДРСУ, это вызов 🚜";
+  if (t >= 28) return "Жара. Енисей всё равно +8, не обманывайся ☀️";
+  if (t >= 15) return "Лето в Сибири — успей, пока не кончилось 😎";
+  return "Норм погодка, можно на Столбы 🥾";
+}
+
 /** Gradient of the "now" card by weather and time of day. */
 function wxGradient(code: number, day: number): string {
   if (!day) return "linear-gradient(135deg, #1d2b4f 0%, #34477a 100%)";
@@ -215,7 +232,7 @@ export function viewWeather(): string {
   // The arrow points where the wind blows to (meteorological direction is where it comes from).
   const arrow = c.wind_direction_10m != null ? `<span class="ms" aria-hidden="true" style="color:var(--primary);font-size:20px;transform:rotate(${(c.wind_direction_10m + 180) % 360}deg)">navigation</span>` : "";
   return `<div class="screen">${topbar("Погода в Красноярске", { right: `<button class="icon-btn" data-act="refreshwx" aria-label="Обновить">${ico("refresh")}</button>` })}
-    <div class="wx-now" style="--wx-grad:${wxGradient(c.weather_code, c.is_day)}"><div style="position:relative;z-index:1"><div class="t num">${sign(c.temperature_2m)}</div><div style="font-weight:650;margin-top:8px;font-size:17px">${esc(now.text)}</div><small>Ощущается как ${sign(c.apparent_temperature)} · днём ${sign(w.daily.temperature_2m_max[0] ?? c.temperature_2m)}, ночью ${sign(w.daily.temperature_2m_min[0] ?? c.temperature_2m)}</small><div class="wx-live">${live ? '<span class="live-dot"></span>В реальном времени' : "Нет связи — сохранённые данные"}</div></div>${ico(now.icon)}</div>
+    <div class="wx-now" style="--wx-grad:${wxGradient(c.weather_code, c.is_day)}"><div style="position:relative;z-index:1"><div class="t num">${sign(c.temperature_2m)}</div><div style="font-weight:650;margin-top:8px;font-size:17px">${esc(now.text)}</div><small>Ощущается как ${sign(c.apparent_temperature)} · днём ${sign(w.daily.temperature_2m_max[0] ?? c.temperature_2m)}, ночью ${sign(w.daily.temperature_2m_min[0] ?? c.temperature_2m)}</small><div class="wx-live">${live ? '<span class="live-dot"></span>В реальном времени' : "Нет связи — сохранённые данные"}</div><span class="wx-quip">${esc(wxQuip(c.temperature_2m, c.weather_code, S.air?.data.current.european_aqi))}</span></div>${ico(now.icon)}</div>
     <div class="wx-grid">
       ${metric("air", `${c.wind_speed_10m.toFixed(1)} м/с`, `ветер${dir ? ", " + dir : ""}${c.wind_gusts_10m != null ? ` · порывы ${Math.round(c.wind_gusts_10m)}` : ""}`, arrow)}
       ${metric("water_drop", `${c.relative_humidity_2m}%`, "влажность")}
@@ -260,9 +277,9 @@ export function viewPrivacy(): string {
 // ---------- онбординг и вход ----------
 
 export const ONB = [
-  { icon: "add_location_alt", color: "var(--primary)", title: "Увидели яму, свалку или наледь?", text: "Сфотографируйте и отметьте место — на обращение уходит меньше минуты." },
-  { icon: "groups", color: "#2f7fb5", title: "Объединяемся с соседями", text: "Поддерживайте обращения других жителей и подтверждайте, когда проблему решили." },
-  { icon: "gavel", color: "#b3471d", title: "Это не официальный канал", text: "Карта делает проблемы видимыми. Для официального ответа приложение подготовит текст обращения для «Госуслуги. Решаем вместе»." },
+  { icon: "add_location_alt", color: "#ff5a1f", title: "Увидел яму? Не молчи 📸", text: "Фото, точка на карте, категория — и обращение улетело. Меньше минуты, честно." },
+  { icon: "groups", color: "#3b5bff", title: "Вместе — это база", text: "Поддерживай обращения соседей, подтверждай, когда починили, качай уровень и забирай шишки 🌰 за квесты." },
+  { icon: "gavel", color: "#8b6cff", title: "Это не официальный канал", text: "Карта делает проблемы видимыми. Для официального ответа приложение подготовит текст обращения для «Госуслуги. Решаем вместе»." },
 ];
 
 export function onboardingHtml(i: number): string {
@@ -283,7 +300,7 @@ export function loginHtml(reason?: string): string {
   const soon = (ok: boolean) => (ok ? "" : `<span class="soon">${b.mode === "local" ? "нужен сервер" : "скоро"}</span>`);
   return `<div class="overlay"><div class="onb" style="justify-content:flex-start" role="dialog" aria-label="Вход">
     <div class="login-logo"><span class="brand-mark">${ico("location_on", "fill")}</span><span class="small muted">Красноярск</span></div>
-    <h2 class="login-title">Карта городских проблем</h2>
+    <h2 class="login-title">Карта <em>проблем</em> Красноярска</h2>
     <p>${esc(reason || "Войдите, чтобы сообщать о проблемах, поддерживать обращения соседей и получать уведомления о статусе.")}</p>
     <div class="stack" style="margin-top:8px">
       <button class="btn vk block" data-act="vk" ${vk ? "" : 'aria-disabled="true"'}><span class="idmark">VK</span>Войти через VK ID${soon(vk)}</button>

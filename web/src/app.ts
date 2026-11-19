@@ -13,7 +13,7 @@ import { appealText, emptyFilter, toCsv } from "./domain/logic";
 import type { Complaint, HomeArea, Status, User } from "./domain/types";
 import { L } from "./map/leaflet";
 import { createMainMap, pinIcon, type MainMap } from "./map/mainMap";
-import { makeBase } from "./map/tiles";
+import { makeBase, refreshVectorTheme } from "./map/tiles";
 import { admin, adminHtml, type AdminTab } from "./screens/admin";
 import { galleryPhotos, navHtml } from "./screens/common";
 import { speechAvailable, stepReady, suggestionHtml, viewCreate, wizard } from "./screens/create";
@@ -27,6 +27,12 @@ import { cat, filtered, findComplaint, isDesktop, isModerator, S, upsertComplain
 import { $, closeModal, closeOverlay, markdown, modalOpen, openModal, overlayOpen, toast } from "./ui/dom";
 import { closeLightbox, lightboxOpen, openLightbox } from "./ui/lightbox";
 import { closePalette, openPalette, paletteOpen, type PaletteItem } from "./ui/palette";
+import { buy, checkIn, claimDaily, claimStory, eggForText, equip, game, gameReward, konamiMatch, saveGame, track, unlockEgg, type GameEvent } from "./game/game";
+import { buzz, confetti, dynasty, eggFound, floatSticker, levelUp, sfx, sixSeven, snowfall, wave } from "./game/fx";
+import { closeGame, gameOpen, openGame } from "./game/minigames";
+import { currentLevel, viewQuests } from "./screens/quests";
+import { achievements } from "./domain/smart";
+import { plural } from "./domain/format";
 
 let mainMap: MainMap | null = null;
 let placeMap: Leaflet.Map | null = null;
@@ -43,7 +49,7 @@ function renderNav(): void {
     bn.classList.toggle("hide", ["create", "appeal"].includes(S.view));
   }
   const rail = $("#rail");
-  if (rail) rail.innerHTML = `<span class="brand-mark" title="Карта городских проблем">${ico("location_on", "fill")}</span>` + navHtml(true);
+  if (rail) rail.innerHTML = `<span class="brand-mark" data-act="lvltap" title="Карта городских проблем">${ico("location_on", "fill")}</span>` + navHtml(true);
 }
 
 function renderHud(): void {
@@ -86,6 +92,7 @@ export function render(): void {
   panel.hidden = false;
   destroySubmaps();
   const fns: Partial<Record<View, () => string>> = {
+    quests: viewQuests,
     list: viewList,
     detail: viewDetail,
     create: viewCreate,
@@ -194,6 +201,20 @@ function afterRender(v: View): void {
   if (v === "list") {
     $("#search")?.addEventListener("input", (e) => {
       S.search = (e.target as HTMLInputElement).value;
+      const egg = eggForText(S.search, true);
+      if (egg) {
+        triggerEgg(egg);
+        // The secret word is not a real search: clear it once the show has started.
+        setTimeout(() => {
+          const inp = $<HTMLInputElement>("#search");
+          if (inp && eggForText(inp.value, true)) {
+            inp.value = S.search = "";
+            const r = $("#list-results");
+            if (r) r.innerHTML = listResults();
+            drawMarkers();
+          }
+        }, 1500);
+      }
       const r = $("#list-results");
       if (r) r.innerHTML = listResults();
       drawMarkers();
@@ -257,6 +278,7 @@ export function go(view: View, opts: GoOpts = {}): void {
   if (!opts.fromHistory) history.pushState({ kgp: true }, "", hashFor(view, S.detailId));
   render();
   onEnter(view);
+  if (view === "weather") gain("weather");
 }
 
 function back(): void {
@@ -293,6 +315,7 @@ function openDetail(id: string): void {
   S.detailPhoto = 0;
   if (S.detail?.id !== id) S.detail = null;
   go("detail", { force: true });
+  gain("detail");
 }
 
 async function onEnter(view: View): Promise<void> {
@@ -393,6 +416,7 @@ async function sendComment(id: string): Promise<void> {
   // The counter comes from the server (a trigger recounts it), so the complaint is reloaded rather than incremented.
   await Promise.all([loadComments(id), loadDetail(id)]);
   softRefresh();
+  gain("comment", 10);
 }
 
 async function loadNotifications(): Promise<void> {
@@ -563,6 +587,8 @@ async function submitDraft(): Promise<void> {
   refresh();
   try {
     d.createdId = await S.backend.createComplaint(payload);
+    gain("create", 60);
+    confetti();
     d.step = 5;
     void loadFeed().then(() => renderHud());
     void loadNotifications();
@@ -648,15 +674,19 @@ async function runAction(a: string, id: string): Promise<void> {
   if (a === "support") {
     const on = !c.supportedByMe;
     const n = await act(() => S.backend.setSupport(id, on), on ? "Вы поддержали обращение. Сообщим об изменениях статуса." : "Поддержка отменена");
-    if (n !== FAIL) upsertComplaint({ ...c, supports: n, supportedByMe: on });
+    if (n !== FAIL) {
+      upsertComplaint({ ...c, supports: n, supportedByMe: on });
+      if (on) gain("support", 15);
+    }
     drawMarkers();
     if (S.view === "map" || (isDesktop() && S.view === "list")) renderHud();
     if (S.view !== "map") refresh();
   } else if (a === "confirm") {
     const r = await act(() => S.backend.confirm(id, true));
     if (r !== FAIL) {
-      toast(r.status === "resolved" ? "Проблема отмечена как решённая" : `Спасибо! Подтверждений: ${r.confirms} из ${CONFIRM_NEED}`);
+      toast(r.status === "resolved" ? "Проблема отмечена как решённая — это база 🏆" : `Спасибо! Подтверждений: ${r.confirms} из ${CONFIRM_NEED}`);
       await reloadComplaint(id);
+      gain("confirm", 40);
     }
   } else if (a === "notfixed") {
     const r = await act(() => S.backend.confirm(id, false), "Обращение снова в списке актуальных");
@@ -772,12 +802,22 @@ async function saveHome(area: HomeArea | null): Promise<void> {
 
 // ---------- command palette ----------
 
+let lastPaletteEgg = "";
 function paletteItems(q: string): PaletteItem[] {
+  const egg = eggForText(q, true);
+  if (egg && q !== lastPaletteEgg) {
+    lastPaletteEgg = q;
+    setTimeout(() => {
+      closePalette();
+      triggerEgg(egg);
+    }, 250);
+  }
   const n = q.toLowerCase().replace(/ё/g, "е");
   const has = (t: string) => !n || t.toLowerCase().replace(/ё/g, "е").includes(n);
   const actions: PaletteItem[] = [
     { group: "Действия", icon: "add_a_photo", title: "Сообщить о проблеме", sub: "Фото, место и категория — меньше минуты", run: () => go("create") },
     { group: "Действия", icon: "format_list_bulleted", title: "Все обращения списком", run: () => go("list") },
+    { group: "Действия", icon: "sports_esports", title: "Квесты, мини-игры и шишки", sub: "Уровень, задания дня, Шишкомаркет", run: () => go("quests") },
     { group: "Действия", icon: "local_fire_department", title: S.heat ? "Выключить тепловую карту" : "Тепловая карта проблем", run: () => void runClick("heat") },
     { group: "Действия", icon: "near_me", title: "Обращения рядом со мной", sub: "Сортировка по расстоянию", run: () => void setSort("near", true) },
     { group: "Действия", icon: "partly_cloudy_day", title: "Погода и качество воздуха", run: () => go("weather") },
@@ -805,6 +845,7 @@ async function paletteSearch(q: string): Promise<PaletteItem[]> {
 }
 
 function flyTo(p: LatLng): void {
+  gain("search");
   if (!isDesktop() && S.view !== "map") go("map");
   setTimeout(() => {
     mainMap?.map.flyTo([p.lat, p.lng], 17, { duration: 0.8 });
@@ -850,6 +891,7 @@ function locateMe(): Promise<LatLng | null> {
 
 async function setSort(sort: typeof S.filter.sort, openList = false): Promise<void> {
   S.filter.sort = sort;
+  if (sort === "near") gain("near");
   if (openList && S.view !== "list") go("list");
   if (sort === "near" && !S.origin) {
     toast("Определяем ваше местоположение…");
@@ -1030,6 +1072,7 @@ async function runClick(action: string, el?: HTMLElement): Promise<void> {
           await navigator.clipboard.writeText(`${text}\n${url}`);
           toast("Ссылка скопирована");
         }
+        gain("share");
       } catch (e) {
         if ((e as Error).name !== "AbortError") toast(`${text} ${url}`);
       }
@@ -1071,6 +1114,69 @@ async function runClick(action: string, el?: HTMLElement): Promise<void> {
       drawMarkers();
       renderHud();
       if (S.heat && !isDesktop() && S.view !== "map") go("map");
+      if (S.heat) gain("heat");
+      break;
+    // ---------- game layer ----------
+    case "claim": {
+      const q = claimDaily(id);
+      if (q) {
+        sfx("coin");
+        confetti();
+        floatSticker(`+${q.coins} 🌰`, "coin");
+        checkLevel();
+      }
+      refresh();
+      break;
+    }
+    case "claimstory": {
+      const u = user();
+      const a = u ? achievements(u, S.complaints).find((x) => x.id === id) : undefined;
+      if (a && claimStory(a.id, a.done)) {
+        sfx("coin");
+        confetti();
+        floatSticker("+40 🌰", "coin");
+        checkLevel();
+      }
+      refresh();
+      break;
+    }
+    case "buy": {
+      const r = buy(id);
+      if (r === "ok") {
+        equip(id);
+        applySkin();
+        drawMarkers();
+        sfx("coin");
+        confetti();
+        toast("Куплено и надето ✨");
+      } else if (r === "poor") toast("Не хватает шишек — сыграй в мини-игру или закрой квест 🎮");
+      refresh();
+      break;
+    }
+    case "equip":
+      if (equip(id)) {
+        applySkin();
+        drawMarkers();
+        sfx("tap");
+      }
+      refresh();
+      break;
+    case "play":
+      openGame(id, (gid, score) => {
+        const r = gameReward(gid, score);
+        gain("game");
+        if (gid === "quiz" && score >= 5) gain("quiz5");
+        if (S.view === "quests") refresh();
+        return r;
+      });
+      break;
+    case "sound":
+      game().sound = !game().sound;
+      saveGame();
+      refresh();
+      break;
+    case "lvltap":
+      lvlTap(el);
       break;
     case "lightbox": {
       const c = findComplaint(S.detailId);
@@ -1491,6 +1597,99 @@ function applyTheme(): void {
   const t = ls.get("theme", "system");
   if (t === "system") document.documentElement.removeAttribute("data-theme");
   else document.documentElement.setAttribute("data-theme", t);
+  refreshVectorTheme();
+}
+
+// ---------- game layer ----------
+
+/** Records a game event: "+XP" sticker, "quest done" toast and a level-up check. */
+function gain(e: GameEvent, xp = 0): void {
+  const done = track(e);
+  if (xp) floatSticker(`+${xp} XP`);
+  done.forEach((q, i) =>
+    setTimeout(() => {
+      sfx("coin");
+      toast(`Квест «${q.title}» выполнен — забери +${q.coins} 🌰 в «Квестах»`);
+    }, 600 + i * 1600),
+  );
+  checkLevel();
+  if (S.view === "quests") refresh();
+}
+
+function checkLevel(): void {
+  const lv = currentLevel();
+  const g = game();
+  if (lv.level > g.level) {
+    g.level = lv.level;
+    g.coins += 25;
+    saveGame();
+    setTimeout(() => levelUp(lv.level, lv.title), 400);
+    renderHud();
+  }
+}
+
+function applySkin(): void {
+  const s = game().equipped.skin;
+  if (s === "classic") delete document.documentElement.dataset.skin;
+  else document.documentElement.dataset.skin = s;
+  if (s === "pixel" && !document.getElementById("pixel-font")) {
+    const l = document.createElement("link");
+    l.id = "pixel-font";
+    l.rel = "stylesheet";
+    l.href = "https://fonts.googleapis.com/css2?family=Pixelify+Sans:wght@400;700&display=swap";
+    document.head.appendChild(l);
+  }
+  refreshVectorTheme();
+}
+
+/** Plays the egg (every time, it is fun) and pays for it once. */
+function triggerEgg(id: string): void {
+  const e = unlockEgg(id);
+  if (id === "dynasty") dynasty();
+  else if (id === "sixseven") sixSeven();
+  else if (id === "yenisei") wave();
+  else if (id === "siberia") {
+    snowfall();
+    if (e) eggFound(e.name, e.coins);
+  } else if (id === "konami") {
+    confetti("confetti", ["👾", "🕹️", "⭐"]);
+    if (e) toast("Код принят 🕹️ В Шишкомаркете открыта тема «8 бит»");
+  } else if (e) eggFound(e.name, e.coins);
+  if (id === "night" && e) toast("Ночной дозор 🦉 Ямы не спят — и ты, видимо, тоже");
+  if (e) floatSticker(`+${e.coins} 🌰`, "egg");
+  if (S.view === "quests") refresh();
+}
+
+const eggBuffer: { keys: string[]; text: string } = { keys: [], text: "" };
+function eggKeys(key: string): void {
+  eggBuffer.keys = [...eggBuffer.keys, key.toLowerCase()].slice(-12);
+  if (konamiMatch(eggBuffer.keys)) {
+    eggBuffer.keys = [];
+    triggerEgg("konami");
+    return;
+  }
+  if (key.length !== 1) return;
+  eggBuffer.text = (eggBuffer.text + key.toLowerCase()).slice(-14);
+  const id = eggForText(eggBuffer.text);
+  if (id) {
+    eggBuffer.text = "";
+    triggerEgg(id);
+  }
+}
+
+let taps: number[] = [];
+function lvlTap(el?: HTMLElement): void {
+  const now = Date.now();
+  taps = [...taps.filter((t) => now - t < 3000), now];
+  sfx("tap");
+  buzz(15);
+  el?.classList.remove("spin");
+  void el?.offsetWidth;
+  el?.classList.add("spin");
+  if (taps.length >= 7) {
+    taps = [];
+    triggerEgg("logo");
+  }
 }
 
 // ---------- start ----------
@@ -1520,6 +1719,9 @@ const events = {
 export async function start(backend: Backend): Promise<void> {
   S.backend = backend;
   applyTheme();
+  matchMedia("(prefers-color-scheme: dark)").addEventListener("change", refreshVectorTheme);
+  applySkin();
+  const firstGameRun = !game().streak.last;
   S.weather = cachedWeather();
   S.air = cachedAir();
   let route = parseHash(location.hash);
@@ -1554,6 +1756,7 @@ export async function start(backend: Backend): Promise<void> {
   });
   addEventListener("keydown", (e) => {
     const typing = /^(INPUT|TEXTAREA|SELECT)$/.test((e.target as HTMLElement)?.tagName ?? "");
+    if (!typing && !e.ctrlKey && !e.metaKey && !gameOpen()) eggKeys(e.key);
     if ((e.key === "k" || e.key === "л" || e.key === "K" || e.key === "Л") && (e.ctrlKey || e.metaKey)) {
       e.preventDefault();
       if (!overlayOpen()) showPalette();
@@ -1565,7 +1768,8 @@ export async function start(backend: Backend): Promise<void> {
       return;
     }
     if (e.key !== "Escape") return;
-    if (lightboxOpen()) closeLightbox();
+    if (gameOpen()) closeGame();
+    else if (lightboxOpen()) closeLightbox();
     else if (paletteOpen()) closePalette();
     else if (modalOpen()) closeModal();
     else if (S.selected) void runClick("closesheet");
@@ -1632,6 +1836,19 @@ export async function start(backend: Backend): Promise<void> {
   if (route.view !== "map" && !route.authCallback) applyRoute(route, false);
   else render();
   if (!S.onboarded && !route.authCallback) onbStep(0);
+  // Game layer: daily streak, the night-owl egg; the first run only remembers the level (no celebration).
+  if (firstGameRun) {
+    game().level = currentLevel().level;
+    saveGame();
+  } else checkLevel();
+  const streak = checkIn();
+  if (streak)
+    setTimeout(() => {
+      toast(`Стрик ${streak.days} ${plural(streak.days, "день", "дня", "дней")} подряд 🔥 +${streak.coins} 🌰`);
+      floatSticker(`+${streak.coins} 🌰`, "coin");
+    }, 1800);
+  const hour = new Date().getHours();
+  if (hour < 5) setTimeout(() => triggerEgg("night"), 3500);
   void flushDrafts();
   setInterval(() => void flushDrafts(), 60_000);
   // Android-like polling fallback when realtime is unavailable.

@@ -4,16 +4,22 @@ import "leaflet.markercluster";
 import "leaflet.markercluster/dist/MarkerCluster.css";
 import { HeatLayer } from "leaflet.heat";
 import { ico } from "../domain/format";
+import { game } from "../game/game";
 import type { Category, Complaint, HomeArea } from "../domain/types";
 import { makeBase, type MapMode } from "./tiles";
 
+const EMOJI: Record<string, string> = { road: "🕳️", light: "💡", trash: "🗑️", snow: "❄️", ice: "🧊", yard: "🏠", green: "🌳", transit: "🚌", other: "❓" };
+
+/** Pin of a complaint; the look follows the pin skin bought in the quests shop (stickers, emoji, squares). */
 export function pinIcon(c: Complaint, cat: Category, sel: boolean): Leaflet.DivIcon {
   const col = c.status === "resolved" ? "#2e7d4f" : cat.color;
+  const skin = game().equipped.pins;
+  const glyph = skin === "emoji" ? `<span class="emo">${c.status === "resolved" ? "✅" : (EMOJI[cat.id] ?? "📍")}</span>` : ico(c.status === "resolved" ? "check" : cat.icon, "fill");
   return L.divIcon({
     className: "",
     iconSize: [36, 44],
-    iconAnchor: [4, 40],
-    html: `<div class="pin ${sel ? "sel" : ""}" style="--c:${col}"><div class="head"></div>${ico(c.status === "resolved" ? "check" : cat.icon, "fill")}${c.supports >= 10 ? `<span class="cnt">${c.supports}</span>` : ""}</div>`,
+    iconAnchor: skin === "pixel" ? [18, 36] : [4, 40],
+    html: `<div class="pin ${sel ? "sel" : ""} ${skin === "pixel" ? "px" : ""}" style="--c:${skin === "emoji" ? "#fffdf8" : col}"><div class="head"></div>${glyph}${c.supports >= 10 ? `<span class="cnt">${c.supports}</span>` : ""}</div>`,
   });
 }
 

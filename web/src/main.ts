@@ -1,5 +1,6 @@
 import "./styles/style.css";
 import "./styles/extra.css";
+import "./styles/game.css";
 import { registerSW } from "virtual:pwa-register";
 import { LocalBackend } from "./api/localBackend";
 import { SupabaseBackend } from "./api/supabaseBackend";

@@ -1,7 +1,7 @@
 {
   "name": "kgp-web",
   "private": true,
-  "version": "1.1.0",
+  "version": "1.2.0",
   "type": "module",
   "description": "Карта городских проблем — сайт (PWA)",
   "scripts": {
@@ -19,7 +19,8 @@
     "idb": "8.0.4",
     "leaflet": "1.9.4",
     "leaflet.heat": "1.0.0",
-    "leaflet.markercluster": "1.5.3"
+    "leaflet.markercluster": "1.5.3",
+    "maplibre-gl": "6.16.0"
   },
   "devDependencies": {
     "@playwright/test": "1.64.0",

@@ -120,7 +120,7 @@ test("full citizen and moderator flow (qa.py → functional)", async ({ page, co
 
   // notifications
   await page.click("[data-act=back]");
-  await page.click(".bottom-nav [data-go=notif]");
+  await page.click("#panel .bell");
   expect(await page.locator(".notif.unread").count()).toBeGreaterThan(0);
   await page.click("[data-act=readall]");
   await expect(page.locator(".notif.unread")).toHaveCount(0);

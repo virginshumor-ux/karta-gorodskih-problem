@@ -3,7 +3,9 @@ import { esc, fmtDate, ico, plural } from "../domain/format";
 import { aqiLevel, cityWarnings, wmo } from "../domain/weather";
 import type { Complaint } from "../domain/types";
 import { filtered, findComplaint, S } from "../state/store";
-import { photoHtml, statusChip } from "./common";
+import { game } from "../game/game";
+import { bellBtn, photoHtml, statusChip } from "./common";
+import { currentLevel } from "./quests";
 
 function weatherChip(): string {
   const w = S.weather?.data;
@@ -41,15 +43,18 @@ export function hudHtml(): { html: string; withBanner: boolean } {
   const f = S.filter;
   const sel = findComplaint(S.selected);
   const n = filtered().length;
+  const lv = currentLevel();
   const statusChips: [Filter["status"], string][] = [["open", "Актуальные"], ["resolved", "Решённые"], ["all", "Все"]];
   const html = `
     <div class="map-top">
       <button class="brand-chip mobile-only" data-go="list" aria-label="Открыть список обращений">
-        <span class="brand-mark">${ico("location_on", "fill")}</span>
-        <span class="brand-txt"><b>Карта городских проблем</b><span>${CITY.name} · ${n} ${plural(n, "обращение", "обращения", "обращений")}</span></span>
+        <span class="brand-mark">${ico("location_on", "fill")}<span class="lvl-badge num" data-go="quests" title="Уровень ${lv.level}: ${esc(lv.title)}">${lv.level}</span></span>
+        <span class="brand-txt"><b>${CITY.name}</b><span>${n} ${plural(n, "обращение", "обращения", "обращений")}</span></span>
       </button>
       <button class="search-chip" data-act="palette" aria-label="Поиск адреса, обращения или действия (Ctrl+K)">${ico("search")}<span>Адрес, обращение или действие</span><kbd>Ctrl K</kbd></button>
+      <button class="lvl-chip desktop-only" data-go="quests" aria-label="Уровень ${lv.level}, ${esc(lv.title)}. Квесты и мини-игры"><span class="lvl-mini num">${lv.level}</span><span><b>${esc(lv.title)}</b><span>🌰 <span class="num">${game().coins}</span> · квесты</span></span></button>
       ${weatherChip()}
+      <span class="mobile-only">${bellBtn()}</span>
     </div>
     ${warn ? `<button class="ice-banner ${warn.level === "bad" ? "bad" : ""}" data-go="weather">${ico(warn.icon, "fill")}<span class="grow">${esc(warn.text)}</span>${ico("chevron_right")}</button>` : ""}
     <div class="filter-row" role="toolbar" aria-label="Фильтры">

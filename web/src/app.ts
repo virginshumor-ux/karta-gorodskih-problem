@@ -203,16 +203,12 @@ function afterRender(v: View): void {
       S.search = (e.target as HTMLInputElement).value;
       const egg = eggForText(S.search, true);
       if (egg) {
+        // The secret word is not a real search: it never filters, and the box is cleared once the show has started.
+        S.search = "";
         triggerEgg(egg);
-        // The secret word is not a real search: clear it once the show has started.
         setTimeout(() => {
           const inp = $<HTMLInputElement>("#search");
-          if (inp && eggForText(inp.value, true)) {
-            inp.value = S.search = "";
-            const r = $("#list-results");
-            if (r) r.innerHTML = listResults();
-            drawMarkers();
-          }
+          if (inp && eggForText(inp.value, true)) inp.value = "";
         }, 1500);
       }
       const r = $("#list-results");

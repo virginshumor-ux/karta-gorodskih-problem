@@ -3,12 +3,21 @@ import { esc } from "../domain/format";
 export const $ = <T extends Element = HTMLElement>(s: string, r: ParentNode = document): T | null => r.querySelector<T>(s);
 
 let toastTimer: ReturnType<typeof setTimeout> | undefined;
+let busyUntil = 0;
+/** Toasts queue up: each one stays at least 1.2 s before the next replaces it (no lost messages). */
 export function toast(msg: string, ms = 3200): void {
-  const t = $("#toast-root");
-  if (!t) return;
-  t.innerHTML = `<div class="toast" role="status">${esc(msg)}</div>`;
-  clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => (t.innerHTML = ""), ms);
+  const now = Date.now();
+  const at = Math.max(now, busyUntil);
+  busyUntil = at + 1200;
+  const show = () => {
+    const t = $("#toast-root");
+    if (!t) return;
+    t.innerHTML = `<div class="toast" role="status">${esc(msg)}</div>`;
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => (t.innerHTML = ""), ms);
+  };
+  if (at === now) show();
+  else setTimeout(show, at - now);
 }
 
 let lastFocus: HTMLElement | null = null;

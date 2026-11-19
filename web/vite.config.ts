@@ -45,6 +45,9 @@ export default defineConfig({
         globPatterns: ["**/*.{js,css,html,svg,png,jpg,webmanifest}"],
         maximumFileSizeToCacheInBytes: 3 * 1024 * 1024,
         cleanupOutdatedCaches: true,
+        // A new version takes over at once (the page reloads itself), instead of waiting until every tab is closed.
+        skipWaiting: true,
+        clientsClaim: true,
         runtimeCaching: [
           {
             // Only tiles the user has actually viewed get cached (OSM tile usage policy: no bulk prefetch).
